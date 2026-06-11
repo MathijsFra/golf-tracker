@@ -83,10 +83,19 @@ export async function getUser() {
 }
 
 export async function signIn(email, password) {
-  const { error } = await client.auth.signInWithPassword({ email, password });
-  if (error) {
-    if (error.message.includes("Invalid login")) throw new Error("E-mail of wachtwoord incorrect.");
-    throw error;
+  console.log("[signIn] Starting sign-in for:", email);
+  try {
+    console.log("[signIn] Calling client.auth.signInWithPassword...");
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    console.log("[signIn] Response received. Error:", error, "Data:", data);
+    if (error) {
+      const msg = error.message.includes("Invalid") ? "E-mail of wachtwoord incorrect." : error.message;
+      throw new Error(msg);
+    }
+    console.log("[signIn] Sign-in successful");
+  } catch (e) {
+    console.error("[signIn] Exception:", e.message);
+    throw e;
   }
 }
 
