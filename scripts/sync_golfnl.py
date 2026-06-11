@@ -205,8 +205,9 @@ def golfnl_fetch_scorecard(session: requests.Session, scorecard_id: str) -> dict
 
 
 def parse_scorecard_html(html: str) -> dict:
-    """Leest de Hole/Par/Slagen-tabel. GOLF.NL toont op de site geen
-    fairway/GIR/putts, dus die blijven None (vul je evt. via screenshot/raster)."""
+    """Leest de Hole/Par/Slagen/Stableford-tabel van de scorekaart-detailpagina.
+    Kolomvolgorde: holes | par (met slagindex in <sup>) | slagen (geen class) | stableford.
+    GOLF.NL toont geen fairway/GIR/putts; die blijven None."""
     soup = BeautifulSoup(html, "html.parser")
     holes_data = []
     for tr in soup.select(".c-scorecard tbody tr"):
@@ -214,12 +215,17 @@ def parse_scorecard_html(html: str) -> dict:
         hole = to_int(hole_cell.get_text()) if hole_cell else None
         if hole is None:          # slaat de "Totaal"-rij over
             continue
+        tds = tr.find_all("td")
         par_cell = tr.select_one(".c-scorecard__scores__par")
-        score_cell = tr.select_one(".c-scorecard__scores__input")
+        # Score heeft geen class — het is de 3e <td> (index 2).
+        score_cell = tds[2] if len(tds) >= 3 else None
+        stb_cell = tr.select_one(".c-scorecard__scores__stableford")
         holes_data.append({
             "hole": hole,
+            # to_int() pakt het eerste getal en negeert de <sup>-slagindex vanzelf.
             "par": to_int(par_cell.get_text()) if par_cell else None,
             "score": to_int(score_cell.get_text()) if score_cell else None,
+            "stb": to_int(stb_cell.get_text()) if stb_cell else None,
             "fairway": None, "gir": None, "putts": None, "penalties": None,
         })
     return {"holes": len(holes_data), "holes_data": holes_data}
@@ -264,13 +270,20 @@ def sb_get_user_settings() -> list[dict]:
     return resp.json()
 
 
-def existing_keys(user_id: str) -> set:
-    """Haalt bestaande rondes van dit account op om dubbele inserts te voorkomen."""
+def existing_rounds(user_id: str) -> list[dict]:
+    """Haalt bestaande rondes van dit account op (datum, holes, sd, holes_data)."""
     resp = request_with_retry(
-        "GET", f"{SUPABASE_URL}/rest/v1/rounds?select=date,holes,sd&user_id=eq.{user_id}",
+        "GET",
+        f"{SUPABASE_URL}/rest/v1/rounds"
+        f"?select=id,date,holes,sd,holes_data&user_id=eq.{user_id}",
         headers=supabase_headers(),
     )
-    return {round_key(r) for r in resp.json()}
+    return resp.json()
+
+
+def existing_keys(user_id: str) -> set:
+    """Haalt bestaande rondes van dit account op om dubbele inserts te voorkomen."""
+    return {round_key(r) for r in existing_rounds(user_id)}
 
 
 def round_key(r: dict):
@@ -330,12 +343,22 @@ def sync_one_user(username: str, password: str, user_id: str) -> int:
     rounds = golfnl_fetch_scores(session)
     log.info("%d score(s) opgehaald.", len(rounds))
 
-    have = existing_keys(user_id)
+    db_rounds = existing_rounds(user_id)
+    have = {round_key(r) for r in db_rounds}
     new_rounds = [r for r in rounds if r.get("date") and round_key(r) not in have]
     log.info("%d nieuwe ronde(s) t.o.v. Supabase.", len(new_rounds))
 
-    if FETCH_DETAILS and new_rounds:
-        failed = 0
+    # Bestaande rondes zonder per-hole data: ophalen en bijwerken (backfill).
+    # Bouw een map van round_key -> supabase-id voor rondes die al bestaan maar
+    # geen holes_data hebben.
+    needs_backfill = {
+        round_key(r): r["id"]
+        for r in db_rounds
+        if not r.get("holes_data")
+    }
+
+    failed = 0
+    if FETCH_DETAILS:
         for rd in new_rounds:
             if not rd.get("_scorecardid"):
                 continue
@@ -347,8 +370,34 @@ def sync_one_user(username: str, password: str, user_id: str) -> int:
             except Exception as e:  # noqa: BLE001
                 failed += 1
                 log.warning("Scorekaart %s overgeslagen: %s", rd.get("_scorecardid"), e)
-        if failed:
-            log.warning("%d scorekaart(en) konden niet worden opgehaald.", failed)
+
+        # Backfill: update bestaande rondes die nog geen holes_data hebben.
+        backfilled = 0
+        for golfnl_rd in rounds:
+            sb_id = needs_backfill.get(round_key(golfnl_rd))
+            if not sb_id or not golfnl_rd.get("_scorecardid"):
+                continue
+            try:
+                d = golfnl_fetch_scorecard(session, golfnl_rd["_scorecardid"])
+                if not d["holes_data"]:
+                    continue
+                request_with_retry(
+                    "PATCH",
+                    f"{SUPABASE_URL}/rest/v1/rounds?id=eq.{sb_id}",
+                    headers={**supabase_headers(), "Prefer": "return=minimal"},
+                    data=json.dumps({"holes": d["holes"], "holes_data": d["holes_data"]}),
+                    timeout=30,
+                )
+                backfilled += 1
+                log.debug("Holes-data bijgewerkt voor ronde %s (id=%s).", golfnl_rd.get("date"), sb_id)
+            except Exception as e:  # noqa: BLE001
+                failed += 1
+                log.warning("Backfill mislukt voor ronde %s: %s", golfnl_rd.get("date"), e)
+        if backfilled:
+            log.info("%d bestaande ronde(s) bijgewerkt met per-hole data.", backfilled)
+
+    if failed:
+        log.warning("%d scorekaart(en) konden niet worden opgehaald.", failed)
 
     return push_to_supabase(new_rounds, user_id)
 
