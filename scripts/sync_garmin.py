@@ -32,7 +32,15 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABAS
 # ============================================================
 #  Garmin: inloggen per gebruiker
 # ============================================================
-def garmin_login(email: str, password: str) -> Garmin:
+def garmin_login_token(token_str: str) -> Garmin:
+    """Inloggen met een opgeslagen sessie-token (geen OTP nodig)."""
+    g = Garmin()
+    g.login(tokenstore=token_str)
+    return g
+
+
+def garmin_login_password(email: str, password: str) -> Garmin:
+    """Inloggen met email + wachtwoord (fallback; mislukt als OTP vereist is)."""
     g = Garmin(email=email, password=password)
     g.login()
     return g
@@ -157,6 +165,17 @@ def sb_patch_round(round_id: str, patch: dict) -> None:
     )
 
 
+def sb_save_garmin_token(user_id: str, token_str: str) -> None:
+    """Slaat een vernieuwd Garmin-sessietoken op via de Edge Function (die versleutelt)."""
+    request_with_retry(
+        "POST",
+        f"{SUPABASE_URL}/functions/v1/save-garmin-token",
+        headers={"Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"},
+        data=json.dumps({"user_id": user_id, "token": token_str}),
+        timeout=30,
+    )
+
+
 def merge_into_holes(existing: list, garmin_holes: list[dict]) -> list:
     by_num = {g["hole"]: g for g in garmin_holes if g.get("hole") is not None}
     existing = existing or []
@@ -269,14 +288,37 @@ def main() -> None:
     for user in users:
         user_id = user["user_id"]
         username = user["garmin_username"]
+        stored_token = user.get("garmin_token")
         log.info("Verwerken gebruiker %s (%s)…", user_id, username)
 
-        try:
-            g = garmin_login(username, user["garmin_password"])
-        except Exception as e:  # noqa: BLE001
-            log.error("  Garmin login mislukt voor %s: %s", username, e)
-            total_failed += 1
-            continue
+        g = None
+
+        # Probeer eerst het opgeslagen sessie-token (geen OTP nodig).
+        if stored_token:
+            try:
+                g = garmin_login_token(stored_token)
+                log.info("  Ingelogd via opgeslagen token.")
+            except Exception as e:  # noqa: BLE001
+                log.warning("  Opgeslagen token werkte niet (%s); probeer wachtwoord.", e)
+
+        # Fallback: email + wachtwoord (mislukt als Garmin OTP vereist).
+        if g is None:
+            password = user.get("garmin_password")
+            if not password:
+                log.error("  Geen token én geen wachtwoord voor %s. Draai garmin_login.py.", username)
+                total_failed += 1
+                continue
+            try:
+                g = garmin_login_password(username, password)
+                log.info("  Ingelogd via wachtwoord.")
+            except Exception as e:  # noqa: BLE001
+                log.error(
+                    "  Login mislukt voor %s: %s\n"
+                    "  → Draai 'python scripts/garmin_login.py' lokaal om een nieuw token op te slaan.",
+                    username, e,
+                )
+                total_failed += 1
+                continue
 
         try:
             updated, failed = sync_user(user_id, g)
@@ -285,6 +327,15 @@ def main() -> None:
         except Exception as e:  # noqa: BLE001
             log.error("  Sync mislukt voor %s: %s", user_id, e)
             total_failed += 1
+            continue
+
+        # Vernieuw het token na een succesvolle sync.
+        try:
+            new_token = g.client.dumps()
+            sb_save_garmin_token(user_id, new_token)
+            log.debug("  Token vernieuwd in Supabase.")
+        except Exception as e:  # noqa: BLE001
+            log.warning("  Token vernieuwen mislukt (niet kritiek): %s", e)
 
     log.info("Klaar. %d ronde(s) bijgewerkt, %d overgeslagen door fouten.",
              total_updated, total_failed)
