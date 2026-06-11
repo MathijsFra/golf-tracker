@@ -16,12 +16,42 @@ alter table public.rounds enable row level security;
 drop policy if exists "anon full access" on public.rounds;
 drop policy if exists "eigen rondes" on public.rounds;
 
-create policy "eigen rondes"
+-- Separate policies for better control
+create policy "read own rounds"
   on public.rounds
-  for all
-  to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  for select
+  using (
+    auth.role() = 'authenticated'
+    and auth.uid() = user_id
+  );
+
+create policy "insert own rounds"
+  on public.rounds
+  for insert
+  with check (
+    auth.role() = 'authenticated'
+    and auth.uid() = user_id
+  );
+
+create policy "update own rounds"
+  on public.rounds
+  for update
+  using (
+    auth.role() = 'authenticated'
+    and auth.uid() = user_id
+  )
+  with check (
+    auth.role() = 'authenticated'
+    and auth.uid() = user_id
+  );
+
+create policy "delete own rounds"
+  on public.rounds
+  for delete
+  using (
+    auth.role() = 'authenticated'
+    and auth.uid() = user_id
+  );
 
 -- anon (de publieke pagina zónder login) krijgt geen enkele policy => geen toegang.
 -- service_role (de scrapers, server-side) omzeilt RLS sowieso.

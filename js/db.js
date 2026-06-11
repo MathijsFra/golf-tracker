@@ -101,14 +101,17 @@ async function accessToken() {
 
 export async function getRounds() {
   if (mode === "supabase") {
+    // Ensure we have an authenticated session
+    const user = await getUser();
+    if (!user) throw new Error("Niet ingelogd");
+
     const { data, error } = await client
-      .from(TABLE).select("*").order("date", { ascending: true });
+      .from(TABLE).select("*").eq("user_id", user.id).order("date", { ascending: true });
     if (error) {
       console.error("[getRounds] Query error:", error);
       throw error;
     }
-    console.log("[getRounds] Got", data?.length, "rows");
-    return data;
+    return data || [];
   }
   return readLocal().slice().sort((a, b) => a.date.localeCompare(b.date));
 }
