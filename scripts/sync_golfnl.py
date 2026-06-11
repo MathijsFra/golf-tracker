@@ -232,10 +232,22 @@ def supabase_headers() -> dict:
     }
 
 
-def existing_keys() -> set:
+def sb_get_user_settings() -> list[dict]:
+    """Haalt alle accounts op die GOLF.NL-credentials hebben ingesteld."""
+    resp = request_with_retry(
+        "GET",
+        f"{SUPABASE_URL}/rest/v1/user_settings"
+        "?select=user_id,golfnl_username,golfnl_password"
+        "&golfnl_username=not.is.null&golfnl_password=not.is.null",
+        headers=supabase_headers(),
+    )
+    return resp.json()
+
+
+def existing_keys(user_id: str) -> set:
     """Haalt bestaande rondes van dit account op om dubbele inserts te voorkomen."""
     resp = request_with_retry(
-        "GET", f"{SUPABASE_URL}/rest/v1/rounds?select=date,holes,sd&user_id=eq.{GOLF_USER_ID}",
+        "GET", f"{SUPABASE_URL}/rest/v1/rounds?select=date,holes,sd&user_id=eq.{user_id}",
         headers=supabase_headers(),
     )
     return {round_key(r) for r in resp.json()}
@@ -247,13 +259,13 @@ def round_key(r: dict):
     return (r.get("date"), r.get("holes"), sd)
 
 
-def push_to_supabase(new_rounds: list[dict]) -> int:
+def push_to_supabase(new_rounds: list[dict], user_id: str) -> int:
     if not new_rounds:
         log.info("Niets nieuws om toe te voegen.")
         return 0
 
     # Interne velden (beginnend met "_") niet meesturen; koppel aan het account.
-    clean = [{**{k: v for k, v in r.items() if not k.startswith("_")}, "user_id": GOLF_USER_ID}
+    clean = [{**{k: v for k, v in r.items() if not k.startswith("_")}, "user_id": user_id}
              for r in new_rounds]
 
     request_with_retry(
@@ -283,31 +295,25 @@ def dry_run(path: str) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
-def main() -> None:
-    if len(sys.argv) > 1:
-        dry_run(sys.argv[1])
-        return
-
-    require_env("GOLFNL_USERNAME", "GOLFNL_PASSWORD", "SUPABASE_URL", "GOLF_USER_ID")
-    if not SUPABASE_KEY:
-        log.error("Geen Supabase-key: zet SUPABASE_SERVICE_KEY (aanrader) of SUPABASE_ANON_KEY.")
-        sys.exit(2)
+def sync_one_user(username: str, password: str, user_id: str) -> int:
+    """Synct één gebruiker. Geeft het aantal toegevoegde rondes terug."""
+    global GOLFNL_USERNAME, GOLFNL_PASSWORD
+    GOLFNL_USERNAME = username
+    GOLFNL_PASSWORD = password
 
     session = requests.Session()
     session.headers.update({"User-Agent": UA, "Accept": "application/json"})
 
-    log.info("Inloggen op GOLF.NL…")
+    log.info("Inloggen op GOLF.NL voor gebruiker %s…", user_id)
     golfnl_login(session)
 
     rounds = golfnl_fetch_scores(session)
     log.info("%d score(s) opgehaald.", len(rounds))
 
-    have = existing_keys()
+    have = existing_keys(user_id)
     new_rounds = [r for r in rounds if r.get("date") and round_key(r) not in have]
     log.info("%d nieuwe ronde(s) t.o.v. Supabase.", len(new_rounds))
 
-    # Scorekaart-details ophalen voor alléén de nieuwe rondes (scheelt requests).
-    # Eén kapotte scorekaart mag de hele run niet blokkeren.
     if FETCH_DETAILS and new_rounds:
         failed = 0
         for rd in new_rounds:
@@ -322,11 +328,49 @@ def main() -> None:
                 failed += 1
                 log.warning("Scorekaart %s overgeslagen: %s", rd.get("_scorecardid"), e)
         if failed:
-            log.warning("%d scorekaart(en) konden niet worden opgehaald "
-                        "(ronde wordt wel toegevoegd, zonder per-hole data).", failed)
+            log.warning("%d scorekaart(en) konden niet worden opgehaald.", failed)
 
-    added = push_to_supabase(new_rounds)
-    log.info("Klaar. %d ronde(s) toegevoegd.", added)
+    return push_to_supabase(new_rounds, user_id)
+
+
+def main() -> None:
+    if len(sys.argv) > 1:
+        dry_run(sys.argv[1])
+        return
+
+    require_env("SUPABASE_URL")
+    if not SUPABASE_KEY:
+        log.error("Geen Supabase-key: zet SUPABASE_SERVICE_KEY (aanrader) of SUPABASE_ANON_KEY.")
+        sys.exit(2)
+
+    # Credentials per gebruiker uit Supabase (ingesteld via de app).
+    users = sb_get_user_settings()
+
+    # Fallback: env vars voor achterwaartse compatibiliteit / lokaal testen.
+    if not users and GOLFNL_USERNAME and GOLFNL_PASSWORD and GOLF_USER_ID:
+        log.info("Geen user_settings gevonden; val terug op GOLFNL_USERNAME/GOLF_USER_ID env vars.")
+        users = [{"user_id": GOLF_USER_ID, "golfnl_username": GOLFNL_USERNAME,
+                  "golfnl_password": GOLFNL_PASSWORD}]
+
+    if not users:
+        log.error("Geen gebruikers met GOLF.NL-credentials. "
+                  "Stel ze in via de app → Synchroniseren → GOLF.NL inloggegevens.")
+        sys.exit(2)
+
+    log.info("%d gebruiker(s) te synchroniseren.", len(users))
+    total_added, failed_users = 0, 0
+    for u in users:
+        try:
+            total_added += sync_one_user(
+                u["golfnl_username"], u["golfnl_password"], u["user_id"],
+            )
+        except Exception as e:  # noqa: BLE001
+            failed_users += 1
+            log.error("Sync mislukt voor gebruiker %s: %s", u.get("user_id"), e)
+
+    log.info("Klaar. %d ronde(s) toegevoegd, %d gebruiker(s) mislukt.", total_added, failed_users)
+    if failed_users and total_added == 0:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

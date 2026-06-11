@@ -2,10 +2,10 @@ import {
   initDb, getMode, getRounds, addRound, updateRound, deleteRound,
   processImage, saveScreenshot, resolveScreenshot, parseScreenshots,
   getUser, signIn, signOut, onAuthChange, triggerWorkflow,
-  getGithubToken, saveGithubToken,
-} from "./db.js?v=6";
-import { computeStats } from "./stats.js?v=6";
-import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=6";
+  getGithubToken, saveGithubToken, loadUserSettings, saveUserSettings,
+} from "./db.js?v=7";
+import { computeStats } from "./stats.js?v=7";
+import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=7";
 
 const MONTHS = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
 
@@ -591,6 +591,28 @@ async function main() {
     onSync("sync-golfnl.yml", $("#syncGolfnlBtn"), syncStatus));
   $("#syncGarminBtn")?.addEventListener("click", () =>
     onSync("sync-garmin.yml", $("#syncGarminBtn"), syncStatus));
+  $("#golfnlSaveBtn")?.addEventListener("click", async () => {
+    const username = $("#golfnlUsername").value.trim();
+    const password = $("#golfnlPassword").value;
+    const msg = $("#golfnlMsg");
+    if (!username || !password) {
+      msg.textContent = "Vul e-mailadres en wachtwoord in.";
+      msg.className = "sync-status err";
+      return;
+    }
+    try {
+      await saveUserSettings({ golfnl_username: username, golfnl_password: password });
+      msg.textContent = "✓ Opgeslagen.";
+      msg.className = "sync-status ok";
+      $("#golfnlPassword").value = "";
+      $("#golfnlDetails").open = false;
+    } catch (err) {
+      msg.textContent = "Opslaan mislukt: " + (err.message || err);
+      msg.className = "sync-status err";
+    }
+    setTimeout(() => { msg.textContent = ""; }, 4000);
+  });
+
   $("#syncTokenSaveBtn")?.addEventListener("click", () => {
     const val = $("#syncTokenInput").value.trim();
     const msg = $("#syncTokenMsg");
@@ -620,6 +642,9 @@ async function main() {
       showApp(true);
       $("#loginMsg").textContent = "";
       await refresh();
+      loadUserSettings().then((s) => {
+        if (s.golfnl_username) $("#golfnlUsername").value = s.golfnl_username;
+      });
     } else if (!user) {
       loaded = false;
       showApp(false);
@@ -629,8 +654,12 @@ async function main() {
   // Eerste check (bestaande sessie?).
   const user = await getUser();
   $("#logoutBtn").hidden = !user;
-  if (user) { loaded = true; showApp(true); await refresh(); }
-  else { showApp(false); }
+  if (user) {
+    loaded = true; showApp(true); await refresh();
+    loadUserSettings().then((s) => {
+      if (s.golfnl_username) $("#golfnlUsername").value = s.golfnl_username;
+    });
+  } else { showApp(false); }
 }
 
 main().catch((e) => {

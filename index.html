@@ -75,6 +75,20 @@
           <button class="btn btn-ghost btn-sm" id="syncGarminBtn">↻ Garmin</button>
         </div>
         <p id="syncStatus" class="sync-status"></p>
+        <details class="adv sync-token-details" id="golfnlDetails">
+          <summary>GOLF.NL inloggegevens</summary>
+          <div class="adv-body">
+            <p class="hint">Vereist voor de GOLF.NL-sync. Wordt per account opgeslagen in de cloud, zodat toekomstige gebruikers hun eigen gegevens kunnen invullen.</p>
+            <label>E-mailadres
+              <input type="email" id="golfnlUsername" placeholder="naam@voorbeeld.nl" autocomplete="off" />
+            </label>
+            <label>Wachtwoord
+              <input type="password" id="golfnlPassword" placeholder="••••••••" autocomplete="new-password" />
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" id="golfnlSaveBtn">Opslaan</button>
+            <p id="golfnlMsg" class="sync-status"></p>
+          </div>
+        </details>
         <details class="adv sync-token-details" id="syncTokenDetails">
           <summary>GitHub token</summary>
           <div class="adv-body">
@@ -254,6 +268,6 @@
     <button class="tab" data-view="chart"><span class="ico">📈</span>Grafiek</button>
   </nav>
 
-  <script type="module" src="js/app.js?v=6"></script>
+  <script type="module" src="js/app.js?v=7"></script>
 </body>
 </html>

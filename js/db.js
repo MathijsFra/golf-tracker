@@ -1,4 +1,4 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY, GITHUB_REPO } from "./config.js?v=6";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, GITHUB_REPO } from "./config.js?v=7";
 
 // De 10 bekende startrondes (datum als ISO yyyy-mm-dd).
 export const SEED_ROUNDS = [
@@ -243,6 +243,26 @@ export async function resolveScreenshot(value) {
 const GH_TOKEN_KEY = "golf_github_token";
 export const getGithubToken = () => localStorage.getItem(GH_TOKEN_KEY) || "";
 export const saveGithubToken = (t) => localStorage.setItem(GH_TOKEN_KEY, t.trim());
+
+// ---------- Gebruikersinstellingen ----------
+export async function loadUserSettings() {
+  if (mode !== "supabase") return {};
+  try {
+    const rows = await pgrest("user_settings?select=golfnl_username,golfnl_password&limit=1");
+    return Array.isArray(rows) && rows.length ? rows[0] : {};
+  } catch { return {}; }
+}
+
+export async function saveUserSettings(settings) {
+  if (mode !== "supabase") return;
+  const user = await getUser();
+  if (!user) throw new Error("Niet ingelogd.");
+  await pgrest("user_settings", {
+    method: "POST",
+    body: JSON.stringify({ user_id: user.id, ...settings }),
+    headers: { "Prefer": "return=minimal,resolution=merge-duplicates" },
+  });
+}
 
 // Triggert een GitHub Actions workflow dispatch.
 export async function triggerWorkflow(workflowFile) {
