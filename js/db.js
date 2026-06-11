@@ -52,15 +52,21 @@ function writeLocal(rows) {
 }
 
 export async function initDb() {
+  console.log("[initDb] Starting with URL:", SUPABASE_URL?.slice(0, 20) + "...");
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
+      console.log("[initDb] Importing @supabase/supabase-js from esm.sh...");
       const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+      console.log("[initDb] Creating Supabase client...");
       client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      mode = "supabase";   // dataverkeer is afgeschermd met login (RLS)
+      mode = "supabase";
+      console.log("[initDb] Supabase mode activated");
     } catch (e) {
-      console.warn("Supabase niet beschikbaar, val terug op lokale opslag.", e);
+      console.error("[initDb] Supabase import/init failed:", e.message, e);
       mode = "local";
     }
+  } else {
+    console.log("[initDb] No Supabase credentials, using local mode");
   }
 
   if (mode === "local" && localStorage.getItem(LS_KEY) === null) {
