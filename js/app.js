@@ -2,9 +2,9 @@ import {
   initDb, getMode, getRounds, addRound, updateRound, deleteRound,
   processImage, saveScreenshot, resolveScreenshot, parseScreenshots,
   getUser, signIn, signOut, onAuthChange,
-} from "./db.js";
-import { computeStats } from "./stats.js";
-import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js";
+} from "./db.js?v=4";
+import { computeStats } from "./stats.js?v=4";
+import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=4";
 
 const MONTHS = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
 
