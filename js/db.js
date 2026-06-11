@@ -94,17 +94,43 @@ export function onAuthChange(cb) {
   client.auth.onAuthStateChange((_event, session) => cb(session?.user || null));
 }
 
+// Leest het JWT-token direct uit localStorage (omzeilt getSession() die kan hangen).
+function storedToken() {
+  const projectRef = SUPABASE_URL.split("//")[1]?.split(".")[0];
+  try {
+    const raw = localStorage.getItem(`sb-${projectRef}-auth-token`);
+    return raw ? JSON.parse(raw)?.access_token : null;
+  } catch { return null; }
+}
+
+// Lichte wrapper om PostgREST te bevragen zonder via supabase-js client.auth te gaan.
+async function pgrest(path, opts = {}) {
+  const token = storedToken() || SUPABASE_ANON_KEY;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...opts,
+    headers: {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `HTTP ${res.status}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
 async function accessToken() {
-  const { data } = await client.auth.getSession();
-  return data.session?.access_token || null;
+  return storedToken() || SUPABASE_ANON_KEY;
 }
 
 export async function getRounds() {
   if (mode === "supabase") {
-    const { data, error } = await client
-      .from(TABLE).select("*").order("date", { ascending: true });
-    if (error) throw error;
-    return data || [];
+    return await pgrest(`${TABLE}?select=*&order=date`);
   }
   return readLocal().slice().sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -112,9 +138,12 @@ export async function getRounds() {
 export async function addRound(round) {
   const row = pick(round);
   if (mode === "supabase") {
-    const { data, error } = await client.from(TABLE).insert(row).select().single();
-    if (error) throw error;
-    return data;
+    const results = await pgrest(TABLE, {
+      method: "POST",
+      body: JSON.stringify(row),
+      headers: { "Prefer": "return=representation" },
+    });
+    return Array.isArray(results) ? results[0] : results;
   }
   const rows = readLocal();
   const saved = { ...row, id: crypto.randomUUID() };
@@ -126,9 +155,12 @@ export async function addRound(round) {
 export async function updateRound(id, round) {
   const row = pick(round);
   if (mode === "supabase") {
-    const { data, error } = await client.from(TABLE).update(row).eq("id", id).select().single();
-    if (error) throw error;
-    return data;
+    const results = await pgrest(`${TABLE}?id=eq.${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(row),
+      headers: { "Prefer": "return=representation" },
+    });
+    return Array.isArray(results) ? results[0] : results;
   }
   const rows = readLocal();
   const i = rows.findIndex((r) => r.id === id);
@@ -138,8 +170,7 @@ export async function updateRound(id, round) {
 
 export async function deleteRound(id) {
   if (mode === "supabase") {
-    const { error } = await client.from(TABLE).delete().eq("id", id);
-    if (error) throw error;
+    await pgrest(`${TABLE}?id=eq.${id}`, { method: "DELETE" });
     return;
   }
   writeLocal(readLocal().filter((r) => r.id !== id));
