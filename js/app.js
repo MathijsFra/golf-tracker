@@ -2,10 +2,10 @@ import {
   initDb, getMode, getRounds, addRound, updateRound, deleteRound,
   processImage, saveScreenshot, resolveScreenshot, parseScreenshots,
   getUser, signIn, signOut, onAuthChange, triggerWorkflow,
-  getGithubToken, saveGithubToken, loadUserSettings, saveUserSettings,
-} from "./db.js?v=8";
-import { computeStats } from "./stats.js?v=8";
-import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=8";
+  loadUserSettings, saveGolfnlCredentials,
+} from "./db.js?v=9";
+import { computeStats } from "./stats.js?v=9";
+import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=9";
 
 const MONTHS = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
 
@@ -538,12 +538,6 @@ async function onLogin(e) {
 }
 
 // ---------- sync ----------
-function refreshSyncTokenUI() {
-  const hasToken = !!getGithubToken();
-  const details = $("#syncTokenDetails");
-  if (details) details.open = !hasToken;
-}
-
 async function onSync(workflowFile, btn, statusEl) {
   btn.disabled = true;
   statusEl.textContent = "Gestart…";
@@ -553,15 +547,8 @@ async function onSync(workflowFile, btn, statusEl) {
     statusEl.textContent = "✓ Sync afgetrapt — klaar over ~1 minuut.";
     statusEl.className = "sync-status ok";
   } catch (err) {
-    if (err.message === "no-token") {
-      statusEl.textContent = "Geen token — stel hem in via 'GitHub token' hieronder.";
-      statusEl.className = "sync-status err";
-      const details = $("#syncTokenDetails");
-      if (details) details.open = true;
-    } else {
-      statusEl.textContent = "Mislukt: " + (err.message || err);
-      statusEl.className = "sync-status err";
-    }
+    statusEl.textContent = "Mislukt: " + (err.message || err);
+    statusEl.className = "sync-status err";
   } finally {
     btn.disabled = false;
     setTimeout(() => { statusEl.textContent = ""; }, 8000);
@@ -601,7 +588,7 @@ async function main() {
       return;
     }
     try {
-      await saveUserSettings({ golfnl_username: username, golfnl_password: password });
+      await saveGolfnlCredentials(username, password);
       msg.textContent = "✓ Opgeslagen.";
       msg.className = "sync-status ok";
       $("#golfnlPassword").value = "";
@@ -611,18 +598,6 @@ async function main() {
       msg.className = "sync-status err";
     }
     setTimeout(() => { msg.textContent = ""; }, 4000);
-  });
-
-  $("#syncTokenSaveBtn")?.addEventListener("click", () => {
-    const val = $("#syncTokenInput").value.trim();
-    const msg = $("#syncTokenMsg");
-    if (!val) { msg.textContent = "Vul een token in."; msg.className = "sync-status err"; return; }
-    saveGithubToken(val);
-    $("#syncTokenInput").value = "";
-    msg.textContent = "✓ Token opgeslagen.";
-    msg.className = "sync-status ok";
-    refreshSyncTokenUI();
-    setTimeout(() => { msg.textContent = ""; }, 3000);
   });
 
   resetForm();

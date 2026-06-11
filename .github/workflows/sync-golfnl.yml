@@ -24,5 +24,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOLF_ENCRYPT_KEY: ${{ secrets.GOLF_ENCRYPT_KEY }}
           LOG_LEVEL: DEBUG
         run: python scripts/sync_golfnl.py

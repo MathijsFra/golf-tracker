@@ -1,4 +1,4 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY, GITHUB_REPO } from "./config.js?v=7";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=7";
 
 // De 10 bekende startrondes (datum als ISO yyyy-mm-dd).
 export const SEED_ROUNDS = [
@@ -240,49 +240,50 @@ export async function resolveScreenshot(value) {
   return value;
 }
 
-const GH_TOKEN_KEY = "golf_github_token";
-export const getGithubToken = () => localStorage.getItem(GH_TOKEN_KEY) || "";
-export const saveGithubToken = (t) => localStorage.setItem(GH_TOKEN_KEY, t.trim());
-
 // ---------- Gebruikersinstellingen ----------
 export async function loadUserSettings() {
   if (mode !== "supabase") return {};
   try {
-    const rows = await pgrest("user_settings?select=golfnl_username,golfnl_password&limit=1");
+    const rows = await pgrest("user_settings?select=golfnl_username&limit=1");
     return Array.isArray(rows) && rows.length ? rows[0] : {};
   } catch { return {}; }
 }
 
-export async function saveUserSettings(settings) {
+// Slaat GOLF.NL-credentials op via de Edge Function (die het wachtwoord versleutelt).
+export async function saveGolfnlCredentials(username, password) {
   if (mode !== "supabase") return;
-  const user = await getUser();
-  if (!user) throw new Error("Niet ingelogd.");
-  await pgrest("user_settings", {
+  const token = await accessToken();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/save-golfnl-creds`, {
     method: "POST",
-    body: JSON.stringify({ user_id: user.id, ...settings }),
-    headers: { "Prefer": "return=minimal,resolution=merge-duplicates" },
-  });
-}
-
-// Triggert een GitHub Actions workflow dispatch.
-export async function triggerWorkflow(workflowFile) {
-  const token = getGithubToken();
-  if (!token) throw new Error("no-token");
-  const res = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${workflowFile}/dispatches`,
-    {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Accept": "application/vnd.github+json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ ref: "main" }),
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "apikey": SUPABASE_ANON_KEY,
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify({ username, password }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `GitHub API ${res.status}`);
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+}
+
+// Triggert een GitHub Actions workflow via de Edge Function (geen PAT in de browser).
+export async function triggerWorkflow(workflowFile) {
+  if (mode !== "supabase") throw new Error("Sync vereist een cloud-verbinding.");
+  const token = await accessToken();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/trigger-sync`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "apikey": SUPABASE_ANON_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ workflow: workflowFile }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
   }
 }
 
