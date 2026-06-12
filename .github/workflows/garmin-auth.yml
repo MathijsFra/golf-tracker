@@ -1,21 +1,19 @@
-name: Sync GOLF.NL
+name: Garmin koppelen
 
-# Draait automatisch én handmatig. Bij handmatig triggeren vanuit de app
-# wordt user_id meegegeven zodat alleen die gebruiker gesynct wordt.
+# Getriggerd vanuit de app wanneer een gebruiker Garmin wil koppelen.
+# Handelt de interactieve login af (inclusief OTP) via Supabase als brug.
 on:
-  schedule:
-    - cron: "0 5 * * *"   # elke dag ~07:00 NL-tijd (05:00 UTC)
   workflow_dispatch:
     inputs:
       user_id:
-        description: 'Supabase user ID (leeg = alle gebruikers)'
-        required: false
+        description: 'Supabase user ID van de gebruiker die koppelt'
+        required: true
         type: string
 
 jobs:
-  sync:
+  auth:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -26,10 +24,9 @@ jobs:
       - name: Installeer dependencies
         run: pip install -r scripts/requirements.txt
 
-      - name: Sync GOLF.NL -> Supabase
+      - name: Garmin koppelen
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GOLF_USER_ID: ${{ inputs.user_id }}
-          LOG_LEVEL: DEBUG
-        run: python scripts/sync_golfnl.py
+        run: python scripts/garmin_auth.py

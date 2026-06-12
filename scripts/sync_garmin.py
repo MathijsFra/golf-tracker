@@ -278,6 +278,11 @@ def main() -> None:
         sys.exit(2)
 
     users = sb_get_user_credentials()
+
+    # Als handmatig getriggerd voor één gebruiker (knop in de app), filter hierop.
+    if GOLF_USER_ID := os.environ.get("GOLF_USER_ID", ""):
+        users = [u for u in users if u["user_id"] == GOLF_USER_ID]
+
     if not users:
         log.info("Geen Garmin-credentials gevonden in Supabase. Niets te doen.")
         return

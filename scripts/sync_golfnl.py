@@ -448,6 +448,10 @@ def main() -> None:
     # Credentials per gebruiker uit Supabase (ingesteld via de app).
     users = sb_get_user_settings()
 
+    # Als handmatig getriggerd voor één gebruiker (knop in de app), filter hierop.
+    if GOLF_USER_ID and users:
+        users = [u for u in users if u["user_id"] == GOLF_USER_ID]
+
     # Fallback: env vars voor achterwaartse compatibiliteit / lokaal testen.
     if not users and GOLFNL_USERNAME and GOLFNL_PASSWORD and GOLF_USER_ID:
         log.info("Geen user_settings gevonden; val terug op GOLFNL_USERNAME/GOLF_USER_ID env vars.")

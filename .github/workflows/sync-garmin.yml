@@ -1,11 +1,16 @@
 name: Sync Garmin
 
 # Draait dagelijks iets ná de GOLF.NL-sync (die maakt/voedt de rondes),
-# en met een handmatige knop.
+# en handmatig vanuit de app (dan wordt user_id meegegeven).
 on:
   schedule:
     - cron: "30 5 * * *"   # ~07:30 NL-tijd (05:30 UTC)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: 'Supabase user ID (leeg = alle gebruikers)'
+        required: false
+        type: string
 
 jobs:
   sync:
@@ -25,5 +30,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOLF_USER_ID: ${{ inputs.user_id }}
           LOG_LEVEL: DEBUG
         run: python scripts/sync_garmin.py

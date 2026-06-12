@@ -3,7 +3,8 @@ import {
   processImage, saveScreenshot, resolveScreenshot, parseScreenshots,
   getUser, signIn, signOut, onAuthChange, triggerWorkflow,
   loadUserSettings, saveGolfnlCredentials, saveGarminCredentials,
-} from "./db.js?v=11";
+  triggerGarminAuth, getGarminAuthStatus, submitGarminOtp,
+} from "./db.js?v=13";
 import { computeStats } from "./stats.js?v=11";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=11";
 
@@ -508,15 +509,24 @@ function switchView(view) {
   if (view !== "add" && editingId) resetForm();
 }
 
+// ---------- dark mode ----------
+const THEME_KEY = "golf_theme";
+function applyTheme(dark) {
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  const toggle = $("#darkModeToggle");
+  if (toggle) toggle.checked = dark;
+}
+(function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  applyTheme(saved === "dark" || (!saved && prefersDark));
+})();
+
 // ---------- auth ----------
 function showApp(show) {
   $("#main").style.display = show ? "" : "none";
   document.querySelector(".tabbar").style.display = show ? "" : "none";
   $("#loginScreen").hidden = show;
-  const syncSection = $("#syncSection");
-  if (syncSection) {
-    syncSection.hidden = !(show && getMode() === "supabase");
-  }
 }
 
 async function onLogin(e) {
@@ -542,8 +552,10 @@ async function onSync(workflowFile, btn, statusEl) {
   statusEl.textContent = "Gestart…";
   statusEl.className = "sync-status";
   try {
-    await triggerWorkflow(workflowFile);
-    statusEl.textContent = "✓ Sync afgetrapt — klaar over ~1 minuut.";
+    const user = await getUser();
+    const inputs = user?.id ? { user_id: user.id } : null;
+    await triggerWorkflow(workflowFile, inputs);
+    statusEl.textContent = "✓ Sync gestart — klaar over ~1 minuut.";
     statusEl.className = "sync-status ok";
   } catch (err) {
     statusEl.textContent = "Mislukt: " + (err.message || err);
@@ -552,6 +564,55 @@ async function onSync(workflowFile, btn, statusEl) {
     btn.disabled = false;
     setTimeout(() => { statusEl.textContent = ""; }, 8000);
   }
+}
+
+// ---------- garmin koppelen ----------
+let garminPollTimer = null;
+
+function stopGarminPoll() {
+  if (garminPollTimer) { clearInterval(garminPollTimer); garminPollTimer = null; }
+}
+
+function updateGarminUI(status, error) {
+  const msg = $("#garminMsg");
+  const step1 = $("#garminStep1");
+  const step2 = $("#garminStep2");
+  if (!msg || !step1 || !step2) return;
+  if (status === "otp_needed") {
+    step1.hidden = true;
+    step2.hidden = false;
+    msg.textContent = "";
+    msg.className = "sync-status";
+  } else if (status === "completed") {
+    stopGarminPoll();
+    step1.hidden = false;
+    step2.hidden = true;
+    msg.textContent = "✓ Garmin gekoppeld!";
+    msg.className = "sync-status ok";
+    setTimeout(() => { msg.textContent = ""; }, 5000);
+  } else if (status === "failed") {
+    stopGarminPoll();
+    step1.hidden = false;
+    step2.hidden = true;
+    msg.textContent = "Mislukt: " + (error || "onbekende fout");
+    msg.className = "sync-status err";
+  } else if (status === "pending") {
+    step1.hidden = true;
+    step2.hidden = true;
+    msg.textContent = "⏳ Verbinden met Garmin (~30 sec)…";
+    msg.className = "sync-status";
+  }
+}
+
+function startGarminPoll() {
+  stopGarminPoll();
+  garminPollTimer = setInterval(async () => {
+    try {
+      const { status, error } = await getGarminAuthStatus();
+      updateGarminUI(status, error);
+      if (status === "completed" || status === "failed") stopGarminPoll();
+    } catch { /* transient */ }
+  }, 3000);
 }
 
 // ---------- init ----------
@@ -577,6 +638,7 @@ async function main() {
     onSync("sync-golfnl.yml", $("#syncGolfnlBtn"), syncStatus));
   $("#syncGarminBtn")?.addEventListener("click", () =>
     onSync("sync-garmin.yml", $("#syncGarminBtn"), syncStatus));
+
   $("#golfnlSaveBtn")?.addEventListener("click", async () => {
     const username = $("#golfnlUsername").value.trim();
     const password = $("#golfnlPassword").value;
@@ -599,7 +661,7 @@ async function main() {
     setTimeout(() => { msg.textContent = ""; }, 4000);
   });
 
-  $("#garminSaveBtn")?.addEventListener("click", async () => {
+  $("#garminConnectBtn")?.addEventListener("click", async () => {
     const username = $("#garminUsername").value.trim();
     const password = $("#garminPassword").value;
     const msg = $("#garminMsg");
@@ -609,17 +671,45 @@ async function main() {
       return;
     }
     try {
+      msg.textContent = "Opslaan…";
+      msg.className = "sync-status";
       await saveGarminCredentials(username, password);
-      msg.textContent = "✓ Opgeslagen.";
-      msg.className = "sync-status ok";
+      await triggerGarminAuth();
       $("#garminPassword").value = "";
-      $("#garminDetails").open = false;
+      updateGarminUI("pending", null);
+      startGarminPoll();
     } catch (err) {
-      msg.textContent = "Opslaan mislukt: " + (err.message || err);
+      msg.textContent = "Fout: " + (err.message || err);
       msg.className = "sync-status err";
     }
-    setTimeout(() => { msg.textContent = ""; }, 4000);
   });
+
+  $("#garminOtpBtn")?.addEventListener("click", async () => {
+    const otp = $("#garminOtp").value.trim();
+    const msg = $("#garminMsg");
+    if (!otp) {
+      msg.textContent = "Voer de verificatiecode in.";
+      msg.className = "sync-status err";
+      return;
+    }
+    try {
+      msg.textContent = "Code versturen…";
+      msg.className = "sync-status";
+      await submitGarminOtp(otp);
+      $("#garminOtp").value = "";
+      msg.textContent = "⏳ Verwerken…";
+    } catch (err) {
+      msg.textContent = "Fout: " + (err.message || err);
+      msg.className = "sync-status err";
+    }
+  });
+
+  $("#darkModeToggle")?.addEventListener("change", (e) => {
+    applyTheme(e.target.checked);
+    localStorage.setItem(THEME_KEY, e.target.checked ? "dark" : "light");
+  });
+
+  $("#settingsLogoutBtn")?.addEventListener("click", () => signOut());
 
   resetForm();
 
@@ -631,30 +721,53 @@ async function main() {
 
   // Cloud-modus: login vereist. Reageer op login/logout/sessieherstel.
   let loaded = false;
+
+  function onUserLoggedIn(user) {
+    $("#logoutBtn").hidden = false;
+    const emailEl = $("#settingsEmail");
+    if (emailEl) emailEl.textContent = user.email || "–";
+    showApp(true);
+    $("#loginMsg").textContent = "";
+  }
+
   onAuthChange(async (user) => {
-    $("#logoutBtn").hidden = !user;
     if (user && !loaded) {
       loaded = true;
-      showApp(true);
-      $("#loginMsg").textContent = "";
+      onUserLoggedIn(user);
       await refresh();
       loadUserSettings().then((s) => {
         if (s.golfnl_username) $("#golfnlUsername").value = s.golfnl_username;
       });
+      // Herstel lopende Garmin-koppeling na pagina-refresh.
+      getGarminAuthStatus().then(({ status, error }) => {
+        if (status === "pending" || status === "otp_needed") {
+          updateGarminUI(status, error);
+          startGarminPoll();
+        }
+      }).catch(() => {});
     } else if (!user) {
       loaded = false;
+      stopGarminPoll();
+      $("#logoutBtn").hidden = true;
       showApp(false);
     }
   });
 
   // Eerste check (bestaande sessie?).
   const user = await getUser();
-  $("#logoutBtn").hidden = !user;
   if (user) {
-    loaded = true; showApp(true); await refresh();
+    loaded = true;
+    onUserLoggedIn(user);
+    await refresh();
     loadUserSettings().then((s) => {
       if (s.golfnl_username) $("#golfnlUsername").value = s.golfnl_username;
     });
+    getGarminAuthStatus().then(({ status, error }) => {
+      if (status === "pending" || status === "otp_needed") {
+        updateGarminUI(status, error);
+        startGarminPoll();
+      }
+    }).catch(() => {});
   } else { showApp(false); }
 }
 

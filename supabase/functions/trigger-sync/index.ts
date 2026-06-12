@@ -3,11 +3,11 @@
 // Triggert een GitHub Actions workflow dispatch als proxy. De GH_PAT
 // staat als Edge Function secret, nooit in de browser.
 //
+// Body: { workflow: string, inputs?: Record<string, string> }
+//
 // Deploy:
 //   supabase functions deploy trigger-sync
 //   supabase secrets set GH_PAT=github_pat_...
-//
-// De aanroepende gebruiker moet ingelogd zijn (JWT vereist).
 // -------------------------------------------------------------------
 
 const GH_PAT = Deno.env.get("GH_PAT") ?? "";
@@ -52,13 +52,18 @@ Deno.serve(async (req: Request) => {
   if (!user?.id) return json({ error: "Ongeldige sessie" }, 401);
 
   let workflowFile: string;
+  let inputs: Record<string, string> | undefined;
   try {
     const body = await req.json();
     workflowFile = body.workflow;
+    inputs = body.inputs;
     if (!workflowFile || typeof workflowFile !== "string") throw new Error();
   } catch {
     return json({ error: "Geef 'workflow' mee in de body (bv. sync-golfnl.yml)" }, 400);
   }
+
+  const dispatchBody: Record<string, unknown> = { ref: "main" };
+  if (inputs && typeof inputs === "object") dispatchBody.inputs = inputs;
 
   const res = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${workflowFile}/dispatches`,
@@ -69,7 +74,7 @@ Deno.serve(async (req: Request) => {
         "Accept": "application/vnd.github+json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ ref: "main" }),
+      body: JSON.stringify(dispatchBody),
     },
   );
 

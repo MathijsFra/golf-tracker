@@ -501,3 +501,84 @@ details.adv[open] > summary::after { transform: rotate(180deg); }
 .holes-input-table select { width: 52px; padding-right: 2px; background-position: right 4px center; }
 .holes-input-table input:focus,
 .holes-input-table select:focus { background: #fff; border-color: var(--green-500); }
+
+/* ---------- Settings tab ---------- */
+.settings-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+.settings-label { font-size: 0.92rem; font-weight: 500; color: var(--ink); }
+.settings-value { font-size: 0.82rem; color: var(--muted); word-break: break-all; text-align: right; max-width: 60%; }
+
+/* ---------- Toggle switch ---------- */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 27px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-pill {
+  position: absolute;
+  inset: 0;
+  background: var(--line);
+  border-radius: 999px;
+  transition: background .2s;
+}
+.toggle-pill::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 21px;
+  height: 21px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+.toggle-switch input:checked + .toggle-pill { background: var(--green-600); }
+.toggle-switch input:checked + .toggle-pill::before { left: calc(100% - 24px); }
+
+/* ---------- Dark mode ---------- */
+:root[data-theme="dark"] {
+  --ink: #e2f0e4;
+  --muted: #7a9b7c;
+  --line: #253d28;
+  --bg: #0d1a0f;
+  --card: #142018;
+  --green-100: #1c3522;
+  --green-800: #86efac;
+  --shadow: 0 1px 3px rgba(0,0,0,0.45), 0 6px 16px rgba(0,0,0,0.3);
+}
+:root[data-theme="dark"] .tabbar {
+  background: rgba(20,32,24,0.95);
+  border-top-color: var(--line);
+}
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  color: var(--ink);
+  background: var(--bg);
+  border-color: var(--line);
+}
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] textarea:focus {
+  background: #1a2e1c;
+  border-color: var(--green-500);
+}
+:root[data-theme="dark"] .toggle-pill::before { background: #d1fae5; }

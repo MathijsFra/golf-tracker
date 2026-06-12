@@ -68,42 +68,6 @@
       <h2 class="section-title">Laatste rondes</h2>
       <div id="recentList" class="round-list"></div>
 
-      <div class="sync-section" id="syncSection" hidden>
-        <h2 class="section-title">Synchroniseren</h2>
-        <div class="sync-row">
-          <button class="btn btn-ghost btn-sm" id="syncGolfnlBtn">↻ GOLF.NL</button>
-          <button class="btn btn-ghost btn-sm" id="syncGarminBtn">↻ Garmin</button>
-        </div>
-        <p id="syncStatus" class="sync-status"></p>
-        <details class="adv sync-token-details" id="golfnlDetails">
-          <summary>GOLF.NL inloggegevens</summary>
-          <div class="adv-body">
-            <p class="hint">Vereist voor de GOLF.NL-sync. Wordt versleuteld opgeslagen per account.</p>
-            <label>E-mailadres
-              <input type="email" id="golfnlUsername" placeholder="naam@voorbeeld.nl" autocomplete="off" />
-            </label>
-            <label>Wachtwoord
-              <input type="password" id="golfnlPassword" placeholder="••••••••" autocomplete="new-password" />
-            </label>
-            <button type="button" class="btn btn-primary btn-sm" id="golfnlSaveBtn">Opslaan</button>
-            <p id="golfnlMsg" class="sync-status"></p>
-          </div>
-        </details>
-        <details class="adv sync-token-details" id="garminDetails">
-          <summary>Garmin Connect inloggegevens</summary>
-          <div class="adv-body">
-            <p class="hint">Vereist voor de Garmin-sync (putts, fairways, penalties per hole). Wordt versleuteld opgeslagen per account. Werkt niet bij accounts met twee-factor-authenticatie.</p>
-            <label>E-mailadres
-              <input type="email" id="garminUsername" placeholder="naam@voorbeeld.nl" autocomplete="off" />
-            </label>
-            <label>Wachtwoord
-              <input type="password" id="garminPassword" placeholder="••••••••" autocomplete="new-password" />
-            </label>
-            <button type="button" class="btn btn-primary btn-sm" id="garminSaveBtn">Opslaan</button>
-            <p id="garminMsg" class="sync-status"></p>
-          </div>
-        </details>
-      </div>
     </section>
 
     <!-- ROUNDS -->
@@ -262,6 +226,74 @@
         <p id="formMsg" class="form-msg"></p>
       </form>
     </section>
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view">
+      <h2 class="section-title">Account</h2>
+      <div class="settings-card">
+        <div class="settings-row">
+          <span class="settings-label">Ingelogd als</span>
+          <span id="settingsEmail" class="settings-value">–</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="settingsLogoutBtn" style="margin-top:12px;width:100%">Uitloggen</button>
+      </div>
+
+      <h2 class="section-title">Weergave</h2>
+      <div class="settings-card">
+        <div class="settings-row">
+          <span class="settings-label">Donkere modus</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="darkModeToggle" />
+            <span class="toggle-pill"></span>
+          </label>
+        </div>
+      </div>
+
+      <h2 class="section-title">Synchroniseren</h2>
+      <div class="settings-card">
+        <div class="sync-row">
+          <button class="btn btn-ghost btn-sm" id="syncGolfnlBtn">↻ GOLF.NL</button>
+          <button class="btn btn-ghost btn-sm" id="syncGarminBtn">↻ Garmin</button>
+        </div>
+        <p id="syncStatus" class="sync-status"></p>
+      </div>
+      <details class="adv sync-token-details" id="golfnlDetails">
+        <summary>GOLF.NL inloggegevens</summary>
+        <div class="adv-body">
+          <p class="hint">Vereist voor de GOLF.NL-sync. Wordt versleuteld opgeslagen per account.</p>
+          <label>E-mailadres
+            <input type="email" id="golfnlUsername" placeholder="naam@voorbeeld.nl" autocomplete="off" />
+          </label>
+          <label>Wachtwoord
+            <input type="password" id="golfnlPassword" placeholder="••••••••" autocomplete="new-password" />
+          </label>
+          <button type="button" class="btn btn-primary btn-sm" id="golfnlSaveBtn">Opslaan</button>
+          <p id="golfnlMsg" class="sync-status"></p>
+        </div>
+      </details>
+      <details class="adv sync-token-details" id="garminDetails">
+        <summary>Garmin Connect koppelen</summary>
+        <div class="adv-body">
+          <p class="hint">Vereist voor de Garmin-sync (putts, fairways, penalties per hole). Wordt versleuteld opgeslagen per account.</p>
+          <div id="garminStep1">
+            <label>E-mailadres
+              <input type="email" id="garminUsername" placeholder="naam@voorbeeld.nl" autocomplete="off" />
+            </label>
+            <label>Wachtwoord
+              <input type="password" id="garminPassword" placeholder="••••••••" autocomplete="new-password" />
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" id="garminConnectBtn">Koppelen</button>
+          </div>
+          <div id="garminStep2" hidden>
+            <p class="hint">Garmin heeft een verificatiecode naar je e-mail gestuurd. Voer hem hieronder in.</p>
+            <label>Verificatiecode
+              <input type="text" id="garminOtp" inputmode="numeric" placeholder="123456" maxlength="8" autocomplete="one-time-code" />
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" id="garminOtpBtn">Bevestigen</button>
+          </div>
+          <p id="garminMsg" class="sync-status"></p>
+        </div>
+      </details>
+    </section>
   </main>
 
   <nav class="tabbar">
@@ -269,8 +301,9 @@
     <button class="tab" data-view="rounds"><span class="ico">📋</span>Rondes</button>
     <button class="tab tab-add" data-view="add"><span class="ico">＋</span>Toevoegen</button>
     <button class="tab" data-view="chart"><span class="ico">📈</span>Grafiek</button>
+    <button class="tab" data-view="settings"><span class="ico">⚙️</span>Instellingen</button>
   </nav>
 
-  <script type="module" src="js/app.js?v=11"></script>
+  <script type="module" src="js/app.js?v=13"></script>
 </body>
 </html>

@@ -63,9 +63,7 @@ export async function initDb() {
     }
   }
 
-  if (mode === "local" && localStorage.getItem(LS_KEY) === null) {
-    writeLocal(SEED_ROUNDS.map((r) => ({ ...pick(r), id: crypto.randomUUID() })));
-  }
+  // Seed-data niet automatisch invoegen — nieuwe gebruikers beginnen leeg.
   return mode;
 }
 
@@ -288,9 +286,11 @@ export async function saveGarminCredentials(username, password) {
 }
 
 // Triggert een GitHub Actions workflow via de Edge Function (geen PAT in de browser).
-export async function triggerWorkflow(workflowFile) {
+export async function triggerWorkflow(workflowFile, inputs = null) {
   if (mode !== "supabase") throw new Error("Sync vereist een cloud-verbinding.");
   const token = await accessToken();
+  const body = { workflow: workflowFile };
+  if (inputs) body.inputs = inputs;
   const res = await fetch(`${SUPABASE_URL}/functions/v1/trigger-sync`, {
     method: "POST",
     headers: {
@@ -298,7 +298,47 @@ export async function triggerWorkflow(workflowFile) {
       "apikey": SUPABASE_ANON_KEY,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ workflow: workflowFile }),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+}
+
+// Triggert de garmin-auth workflow voor de ingelogde gebruiker.
+export async function triggerGarminAuth() {
+  const user = await getUser();
+  if (!user?.id) throw new Error("Niet ingelogd.");
+  await triggerWorkflow("garmin-auth.yml", { user_id: user.id });
+}
+
+// Geeft de huidige Garmin-koppelstatus terug: { status, error }
+export async function getGarminAuthStatus() {
+  if (mode !== "supabase") return { status: null, error: null };
+  const token = await accessToken();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/garmin-auth`, {
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "apikey": SUPABASE_ANON_KEY,
+    },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
+}
+
+// Stuurt de OTP-code door naar de server zodat de wachtende workflow verder kan.
+export async function submitGarminOtp(otp) {
+  if (mode !== "supabase") return;
+  const token = await accessToken();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/garmin-auth`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "apikey": SUPABASE_ANON_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ otp }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
