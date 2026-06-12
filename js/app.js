@@ -6,7 +6,8 @@ import {
   triggerGarminAuth, getGarminAuthStatus, submitGarminOtp,
   resetGarminAuthStatus, clearGarminCredentials, clearGolfnlCredentials,
   getClubBag, getToptracerStatus, saveToptracerCredentials, clearToptracerCredentials,
-} from "./db.js?v=22";
+  saveRoundInsights,
+} from "./db.js?v=23";
 import { computeStats } from "./stats.js?v=12";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=11";
 
@@ -38,12 +39,21 @@ function esc(s) {
 }
 
 // ---------- data flow ----------
+function persistInsights(allRounds) {
+  for (const r of allRounds) {
+    if (r.insights !== null && r.insights !== undefined) continue;
+    const insights = computeInsights(r, allRounds);
+    if (insights.length) saveRoundInsights(r.id, insights);
+  }
+}
+
 async function refresh() {
   rounds = await getRounds();
   stats = computeStats(rounds);
   rounds = stats.rounds;
   renderDashboard();
   renderRoundList();
+  persistInsights(rounds);
   if (isActive("chart")) buildCharts();
   else chartsBuilt = false;
 }
@@ -237,6 +247,88 @@ function renderBagGrid() {
   grid.innerHTML = html;
 }
 
+// ---------- per-ronde inzichten ----------
+function computeInsights(round, allRounds) {
+  const insights = [];
+  const h = round.holes || 18;
+
+  const peers = allRounds.filter(
+    (r) => r.id !== round.id && r.holes === h && !r.non_qualifying && !r.deleted_at,
+  );
+  if (peers.length < 4) return insights;
+
+  const avg = (arr, fn) => {
+    const vals = arr.map(fn).filter((v) => v != null && !isNaN(v));
+    return vals.length >= 3 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+
+  // Putting
+  if (round.putts != null) {
+    const a = avg(peers, (r) => r.putts);
+    if (a != null) {
+      if (round.putts <= a - 2) insights.push({ sentiment: "positive", label: "Goed geput", detail: `${round.putts} putts, gem. ${Math.round(a)}` });
+      else if (round.putts >= a + 3) insights.push({ sentiment: "negative", label: "Veel putts", detail: `${round.putts} putts, gem. ${Math.round(a)}` });
+    }
+  }
+
+  // 3-putts
+  if (round.three_putts != null) {
+    const a = avg(peers, (r) => r.three_putts);
+    if (a != null && round.three_putts >= a + 2)
+      insights.push({ sentiment: "negative", label: "3-putts", detail: `${round.three_putts}×, gem. ${a.toFixed(1)}` });
+  }
+
+  // Fairways
+  if (round.fairways_hit != null && round.fairways_total) {
+    const rate = round.fairways_hit / round.fairways_total;
+    const a = avg(peers.filter((r) => r.fairways_total), (r) => r.fairways_hit / r.fairways_total);
+    if (a != null) {
+      if (rate >= a + 0.15) insights.push({ sentiment: "positive", label: "Goede driving", detail: `${round.fairways_hit}/${round.fairways_total} fairways` });
+      else if (rate <= a - 0.15) insights.push({ sentiment: "negative", label: "Weinig fairways", detail: `${round.fairways_hit}/${round.fairways_total}` });
+    }
+  }
+
+  // GIR
+  if (round.gir != null) {
+    const a = avg(peers, (r) => r.gir);
+    if (a != null) {
+      if (round.gir >= a + 2) insights.push({ sentiment: "positive", label: "Scherpe ijzers", detail: `${round.gir} GIR, gem. ${a.toFixed(1)}` });
+      else if (round.gir <= a - 2) insights.push({ sentiment: "negative", label: "GIR onder gem.", detail: `${round.gir} GIR, gem. ${a.toFixed(1)}` });
+    }
+  }
+
+  // Penalties
+  if (round.penalties != null) {
+    const a = avg(peers, (r) => r.penalties);
+    if (a != null && round.penalties >= a + 2)
+      insights.push({ sentiment: "negative", label: "Veel penalties", detail: `${round.penalties}×, gem. ${a.toFixed(1)}` });
+  }
+
+  // Double bogeys
+  if (round.double_bogeys != null) {
+    const a = avg(peers, (r) => r.double_bogeys);
+    if (a != null && round.double_bogeys >= a + 2)
+      insights.push({ sentiment: "negative", label: "Dubbele bogeys", detail: `${round.double_bogeys}×, gem. ${a.toFixed(1)}` });
+  }
+
+  // Stableford vs break-even (36 op 18h, 18 op 9h)
+  if (round.stb != null && !round.non_qualifying) {
+    const expected = h === 9 ? 18 : 36;
+    const diff = round.stb - expected;
+    if (diff >= 4) insights.push({ sentiment: "positive", label: "Boven verwachting", detail: `${round.stb} stbl.` });
+    else if (diff <= -6) insights.push({ sentiment: "negative", label: "Onder verwachting", detail: `${round.stb} stbl.` });
+  }
+
+  return insights;
+}
+
+function insightChips(insights) {
+  if (!insights.length) return "";
+  return `<div class="insight-chips">${
+    insights.map((i) => `<span class="insight-chip ${i.sentiment}" title="${esc(i.detail)}">${esc(i.label)}</span>`).join("")
+  }</div>`;
+}
+
 // ---------- round list ----------
 function renderRoundList() {
   $("#roundCount").textContent = stats.count;
@@ -258,6 +350,9 @@ function roundCard(r, withActions) {
   const hd = Array.isArray(r.holes_data) ? r.holes_data : [];
   const ct = r.course_tees;
   const hasCr = ct && (ct.course_rating != null || ct.slope_rating != null);
+  const insights = computeInsights(r, rounds);
+  const chips = insightChips(insights);
+  const hasContent = hasCr || garmin || hd.length || shots.length || r.notes || chips;
   return `
   <div class="round-card" data-id="${r.id}">
     <div class="round-head">
@@ -273,6 +368,7 @@ function roundCard(r, withActions) {
       <span class="chev">›</span>
     </div>
     <div class="round-detail">
+      ${chips}
       ${hasCr ? `<div class="round-cr-row">
         <span class="round-cr-item"><span class="cr-label">CR</span> ${ct.course_rating != null ? Number(ct.course_rating).toFixed(1) : "—"}</span>
         <span class="round-cr-item"><span class="cr-label">Slope</span> ${ct.slope_rating ?? "—"}</span>
@@ -287,7 +383,7 @@ function roundCard(r, withActions) {
       ${hd.length ? holesTable(hd) : ""}
       ${shots.length ? `<div class="shot-thumbs">${shots.map((u) => `<a class="shot-link" data-shot="${esc(u)}" target="_blank" rel="noopener"><img alt="screenshot" loading="lazy"></a>`).join("")}</div>` : ""}
       ${r.notes ? `<div class="round-notes">${esc(r.notes)}</div>` : ""}
-      ${!hasCr && !garmin && !hd.length && !shots.length && !r.notes ? `<div class="empty-garmin">Geen extra details voor deze ronde.</div>` : ""}
+      ${!hasContent ? `<div class="empty-garmin">Geen extra details voor deze ronde.</div>` : ""}
       ${withActions ? `<div class="detail-actions">
         ${(!r.non_qualifying && !r.golfnl_scorecard_id) ? `<button class="btn btn-ghost btn-sm" data-edit="${r.id}">Bewerken</button>` : ""}
         <button class="btn btn-danger btn-sm" data-del="${r.id}" ${r.non_qualifying ? 'data-nq="true"' : ""}>Verwijderen</button>

@@ -240,6 +240,17 @@ html, body {
 .detail-actions { display: flex; gap: 8px; }
 .empty-garmin { font-size: 0.82rem; color: var(--muted); margin: 12px 0; font-style: italic; }
 
+/* ---------- Inzichten chips ---------- */
+.insight-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.insight-chip {
+  font-size: 0.72rem; font-weight: 600; padding: 3px 10px;
+  border-radius: 12px; line-height: 1.5;
+}
+.insight-chip.positive { background: var(--green-100); color: var(--green-700); }
+.insight-chip.negative { background: #fef3c7; color: #92400e; }
+:root[data-theme="dark"] .insight-chip.positive { background: var(--green-100); color: var(--green-800); }
+:root[data-theme="dark"] .insight-chip.negative { background: #451a03; color: #fcd34d; }
+
 /* ---------- Course Rating / Slope in round detail ---------- */
 .round-cr-row {
   display: flex;

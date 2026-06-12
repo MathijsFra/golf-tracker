@@ -135,6 +135,17 @@ export async function getRounds() {
   return readLocal().slice().sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export async function saveRoundInsights(id, insights) {
+  if (mode !== "supabase") return;
+  try {
+    await pgrest(`${TABLE}?id=eq.${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ insights }),
+      headers: { "Prefer": "return=minimal" },
+    });
+  } catch { /* fire-and-forget */ }
+}
+
 export async function addRound(round) {
   const row = pick(round);
   if (mode === "supabase") {
