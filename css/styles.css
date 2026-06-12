@@ -203,6 +203,16 @@ html, body {
   border-radius: 999px;
   letter-spacing: 0.03em;
 }
+.badge-nq {
+  font-size: 0.62rem;
+  font-weight: 700;
+  background: var(--muted);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 999px;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+}
 .chev { color: var(--muted); transition: transform .2s; font-size: 0.9rem; }
 .round-card.open .chev { transform: rotate(90deg); }
 

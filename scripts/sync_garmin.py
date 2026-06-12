@@ -119,11 +119,16 @@ def parse_hole(h: dict) -> dict:
     penalties = pick(h, "penalties", "penaltyStrokes", "penaltyCount")
     fairway_raw = pick(h, "fairwayShotOutcome", "fairwayShot", "fairway", "teeShotOutcome")
     fairway = FAIRWAY_MAP.get(str(fairway_raw).upper()) if fairway_raw is not None else None
+    strokes = pick(h, "strokes", "shots", "stroke")
+    par = pick(h, "par", "holePar")
     return {
         "hole": to_int(number),
+        "par": to_int(par),
+        "score": to_int(strokes),
         "putts": to_int(putts),
         "penalties": to_int(penalties),
         "fairway": fairway,
+        "gir": None,
     }
 
 
@@ -164,6 +169,15 @@ def sb_get_rounds(user_id: str) -> list[dict]:
     return r.json()
 
 
+def sb_create_round(round_data: dict) -> None:
+    request_with_retry(
+        "POST", f"{SUPABASE_URL}/rest/v1/rounds",
+        headers={**sb_headers(), "Prefer": "return=minimal"},
+        data=json.dumps(round_data),
+        timeout=30,
+    )
+
+
 def sb_patch_round(round_id: str, patch: dict) -> None:
     request_with_retry(
         "PATCH", f"{SUPABASE_URL}/rest/v1/rounds?id=eq.{round_id}",
@@ -181,6 +195,53 @@ def sb_save_garmin_token(user_id: str, token_str: str) -> None:
         data=json.dumps({"user_id": user_id, "token": token_str}),
         timeout=30,
     )
+
+
+def course_name_from_garmin(summary: dict, detail: dict | None = None) -> str | None:
+    """Probeert de baannaam te achterhalen uit Garmin-data."""
+    name = pick(summary, "courseName", "name", "golfCourse")
+    if name and isinstance(name, str):
+        return name
+    if detail and isinstance(detail, dict):
+        sd = detail.get("scorecardDetails")
+        if isinstance(sd, list) and sd:
+            sc = sd[0].get("scorecard", {})
+            name = pick(sc, "courseName", "name")
+            if name and isinstance(name, str):
+                return name
+            course = sc.get("course") or sc.get("golfCourse") or {}
+            if isinstance(course, dict):
+                name = pick(course, "name", "courseName")
+                if name:
+                    return str(name)
+    return None
+
+
+def build_nq_round(summary: dict, detail: dict, garmin_holes: list[dict],
+                   user_id: str, date: str) -> dict:
+    """Maakt een NQ-ronde-record op basis van Garmin-data."""
+    holes_data = []
+    total_score = 0
+    for h in garmin_holes:
+        score = h.get("score")
+        if score is not None:
+            total_score += score
+        hd = {k: h.get(k) for k in ("hole", "par", "score", "putts", "penalties", "fairway")}
+        hd["gir"] = None
+        p, sc, pu = hd.get("par"), hd.get("score"), hd.get("putts")
+        if p is not None and sc is not None and pu is not None:
+            hd["gir"] = (sc - pu) <= (p - 2)
+        holes_data.append(hd)
+
+    return {
+        "user_id": user_id,
+        "date": date,
+        "course": course_name_from_garmin(summary, detail) or "",
+        "holes": len(garmin_holes),
+        "score": total_score if total_score > 0 else None,
+        "holes_data": holes_data,
+        "non_qualifying": True,
+    }
 
 
 def merge_into_holes(existing: list, garmin_holes: list[dict]) -> list:
@@ -225,8 +286,6 @@ def sync_user(user_id: str, g: Garmin) -> tuple[int, int]:
     for s in summaries:
         date = scorecard_date(s)
         candidates = by_date.get(date or "", [])
-        if not candidates:
-            continue
 
         try:
             detail = retry_call(g.get_golf_scorecard, scorecard_id(s))
@@ -234,6 +293,23 @@ def sync_user(user_id: str, g: Garmin) -> tuple[int, int]:
         except Exception as e:  # noqa: BLE001
             failed += 1
             log.warning("  Scorekaart %s (%s) overgeslagen: %s", scorecard_id(s), date, e)
+            continue
+
+        if not candidates:
+            # Geen overeenkomende ronde in Supabase → maak NQ-ronde aan.
+            if not garmin_holes:
+                log.debug("  %s: geen hole-data, NQ-ronde overgeslagen.", date)
+                continue
+            try:
+                nq = build_nq_round(s, detail, garmin_holes, user_id, date)
+                sb_create_round(nq)
+                by_date.setdefault(date, []).append({"date": date, "holes": nq["holes"]})
+                updated += 1
+                log.info("  ✓ %s: NQ-ronde aangemaakt (%d holes, baan: %s)",
+                         date, nq["holes"], nq.get("course") or "onbekend")
+            except Exception as e:  # noqa: BLE001
+                failed += 1
+                log.warning("  NQ-ronde aanmaken mislukt voor %s: %s", date, e)
             continue
 
         if not any(h.get("putts") is not None or h.get("fairway") or h.get("penalties") is not None

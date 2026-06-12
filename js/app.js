@@ -5,8 +5,8 @@ import {
   loadUserSettings, saveGolfnlCredentials, saveGarminCredentials,
   triggerGarminAuth, getGarminAuthStatus, submitGarminOtp,
   resetGarminAuthStatus, clearGarminCredentials, clearGolfnlCredentials,
-} from "./db.js?v=16";
-import { computeStats } from "./stats.js?v=11";
+} from "./db.js?v=17";
+import { computeStats } from "./stats.js?v=12";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=11";
 
 const MONTHS = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
@@ -156,7 +156,7 @@ function roundCard(r, withActions) {
     <div class="round-head">
       <div class="round-date"><span class="d">${parseInt(d, 10)}</span><span class="m">${MONTHS[parseInt(m, 10) - 1]}</span></div>
       <div class="round-info">
-        <div class="round-course">${esc(r.course)} ${r._exs ? '<span class="badge-exs">EXS</span>' : ""}</div>
+        <div class="round-course">${esc(r.course)} ${r._exs ? '<span class="badge-exs">EXS</span>' : ""}${r.non_qualifying ? '<span class="badge-nq">NQ</span>' : ""}</div>
         <div class="round-tags">${r.holes}h · ${esc(r.tee || "—")} · SD ${r.sd != null ? Number(r.sd).toFixed(1) : "—"}${r.score != null ? ` · ${r.score} slagen` : ""}</div>
       </div>
       <div class="round-metrics">

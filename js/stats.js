@@ -11,7 +11,7 @@ function holesData(r) {
   return Array.isArray(r.holes_data) ? r.holes_data : [];
 }
 
-const isNonQualifying = (r) => r.notes === "Non-qualifying";
+const isNonQualifying = (r) => r.non_qualifying === true || r.notes === "Non-qualifying";
 
 // Bepaalt per ronde of het een exceptionele score (EXS) is.
 // EXS is een WHS-concept dat alleen geldt voor kwalificerende rondes;

@@ -23,7 +23,7 @@ const FIELDS = [
   "date", "course", "holes", "tee", "stb", "sd", "hcp",
   "score", "course_handicap", "putts", "penalties", "bunkers", "bunker_saves",
   "gir", "fairways_hit", "fairways_total", "three_putts", "double_bogeys",
-  "holes_data", "screenshots", "notes",
+  "holes_data", "screenshots", "notes", "non_qualifying",
 ];
 const ARRAY_FIELDS = new Set(["holes_data", "screenshots"]);
 
