@@ -5,8 +5,8 @@ import {
   loadUserSettings, saveGolfnlCredentials, saveGarminCredentials,
   triggerGarminAuth, getGarminAuthStatus, submitGarminOtp,
   resetGarminAuthStatus, clearGarminCredentials, clearGolfnlCredentials,
-  getClubBag, getToptracerStatus, exchangeToptracerCode, clearToptracerCredentials,
-} from "./db.js?v=19";
+  getClubBag, getToptracerStatus, saveToptracerCredentials, clearToptracerCredentials,
+} from "./db.js?v=20";
 import { computeStats } from "./stats.js?v=12";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=11";
 
@@ -653,15 +653,6 @@ function showToptracerLinked(username) {
   if (summary) summary.textContent = linked ? "Toptracer ✓ gekoppeld" : "Toptracer koppelen";
 }
 
-async function generatePkce() {
-  const verifier = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(48))))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  const challenge = btoa(String.fromCharCode(...new Uint8Array(hash)))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-  return { verifier, challenge };
-}
-
 // ---------- garmin koppelen ----------
 function showGarminLinked(username) {
   const linked = !!username;
@@ -845,74 +836,33 @@ async function main() {
   });
 
   // Toptracer
-  let toptracerCodeVerifier = null;
-
-  $("#toptracerAuthBtn")?.addEventListener("click", async () => {
+  $("#toptracerSaveBtn")?.addEventListener("click", async () => {
+    const email = $("#toptracerEmail")?.value?.trim() || "";
+    const password = $("#toptracerPassword")?.value || "";
     const msg = $("#toptracerMsg");
-    try {
-      const { verifier, challenge } = await generatePkce();
-      toptracerCodeVerifier = verifier;
-      const state = Math.random().toString(36).slice(2);
-      const params = new URLSearchParams({
-        client_id: "trca",
-        response_type: "code",
-        redirect_uri: "com.toptracer.community.dev:/callback",
-        scope: "openid",
-        code_challenge: challenge,
-        code_challenge_method: "S256",
-        state,
-      });
-      const authUrl = `https://login.toptracer.com/realms/toptracer/protocol/openid-connect/auth?${params}`;
-      window.open(authUrl, "_blank");
-      $("#toptracerStep2").hidden = false;
-      if (msg) { msg.textContent = "Log in bij Toptracer en plak de callback-URL hieronder."; msg.className = "sync-status"; }
-    } catch (err) {
-      if (msg) { msg.textContent = "Fout: " + (err.message || err); msg.className = "sync-status err"; }
-    }
-  });
-
-  $("#toptracerCodeBtn")?.addEventListener("click", async () => {
-    const msg = $("#toptracerMsg");
-    const raw = $("#toptracerCallbackUrl")?.value?.trim() || "";
-    if (!raw || !toptracerCodeVerifier) {
-      if (msg) { msg.textContent = "Plak de volledige callback-URL en klik opnieuw op Inloggen."; msg.className = "sync-status err"; }
+    if (!email || !password) {
+      if (msg) { msg.textContent = "Vul e-mailadres en wachtwoord in."; msg.className = "sync-status err"; }
       return;
     }
-    let code;
+    if (msg) { msg.textContent = "Opslaan…"; msg.className = "sync-status"; }
     try {
-      const url = raw.startsWith("http") ? new URL(raw) : new URL("https://x?" + raw.split("?")[1]);
-      code = url.searchParams.get("code");
-    } catch { code = null; }
-    if (!code) {
-      const m = raw.match(/[?&]code=([^&]+)/);
-      code = m ? m[1] : null;
-    }
-    if (!code) {
-      if (msg) { msg.textContent = "Geen code gevonden in de URL. Kopieer de volledige adresbalk-URL."; msg.className = "sync-status err"; }
-      return;
-    }
-    if (msg) { msg.textContent = "Koppelen…"; msg.className = "sync-status"; }
-    try {
-      const result = await exchangeToptracerCode(code, toptracerCodeVerifier);
-      toptracerCodeVerifier = null;
-      $("#toptracerCallbackUrl").value = "";
-      $("#toptracerStep2").hidden = true;
-      showToptracerLinked(result.username || "–");
-      if (msg) { msg.textContent = "✓ Toptracer gekoppeld!"; msg.className = "sync-status ok"; }
-      setTimeout(() => { if (msg) msg.textContent = ""; }, 5000);
-      renderClubBag();
+      await saveToptracerCredentials(email, password);
+      $("#toptracerPassword").value = "";
+      showToptracerLinked(email);
+      if (msg) { msg.textContent = "✓ Opgeslagen! Club-afstanden worden gesynchroniseerd bij de volgende dagelijkse sync."; msg.className = "sync-status ok"; }
+      setTimeout(() => { if (msg) msg.textContent = ""; }, 6000);
+      $("#toptracerDetails").open = false;
     } catch (err) {
-      if (msg) { msg.textContent = "Koppelen mislukt: " + (err.message || err); msg.className = "sync-status err"; }
+      if (msg) { msg.textContent = "Opslaan mislukt: " + (err.message || err); msg.className = "sync-status err"; }
     }
   });
 
   $("#toptracerUnlinkBtn")?.addEventListener("click", async () => {
-    if (!confirm("Toptracer ontkoppelen? De opgeslagen koppeling wordt gewist.")) return;
+    if (!confirm("Toptracer ontkoppelen? De opgeslagen inloggegevens worden gewist.")) return;
     const msg = $("#toptracerMsg");
     try {
       await clearToptracerCredentials();
       showToptracerLinked(null);
-      toptracerCodeVerifier = null;
       if (msg) msg.textContent = "";
       $("#toptracerDetails").open = false;
     } catch (err) {
@@ -979,7 +929,7 @@ async function main() {
           if (s.garmin_username) $("#garminUsername").value = s.garmin_username;
           showGarminLinked(null);
         }
-        if (s.toptracer_auth_status === "completed" && s.toptracer_username) {
+        if ((s.toptracer_auth_status === "completed" || s.toptracer_auth_status === "credentials_saved") && s.toptracer_username) {
           showToptracerLinked(s.toptracer_username);
         } else {
           showToptracerLinked(null);

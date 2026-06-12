@@ -311,15 +311,14 @@
             <button type="button" class="btn btn-ghost btn-sm" id="toptracerUnlinkBtn" style="margin-top:12px;width:100%">Ontkoppelen</button>
           </div>
           <div id="toptracerUnlinkedState">
-            <p class="hint">Koppel je Toptracer-account om club-afstanden (driving range) in de app te zien.</p>
-            <button type="button" class="btn btn-primary btn-sm" id="toptracerAuthBtn">Inloggen bij Toptracer</button>
-            <div id="toptracerStep2" hidden style="margin-top:12px">
-              <p class="hint">Na het inloggen stuurt Toptracer je naar een pagina die niet opent. Kopieer de volledige URL uit de adresbalk en plak hem hieronder.</p>
-              <label>Callback-URL
-                <input type="text" id="toptracerCallbackUrl" placeholder="com.toptracer.community.dev:/callback?code=…" autocomplete="off" />
-              </label>
-              <button type="button" class="btn btn-primary btn-sm" id="toptracerCodeBtn" style="margin-top:8px">Koppelen</button>
-            </div>
+            <p class="hint">Vul je Toptracer-inloggegevens in. Club-afstanden worden elke dag automatisch gesynchroniseerd.</p>
+            <label>E-mailadres
+              <input type="email" id="toptracerEmail" placeholder="naam@voorbeeld.nl" autocomplete="off" />
+            </label>
+            <label>Wachtwoord
+              <input type="password" id="toptracerPassword" placeholder="••••••••" autocomplete="new-password" />
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" id="toptracerSaveBtn">Koppelen</button>
           </div>
           <p id="toptracerMsg" class="sync-status"></p>
         </div>
@@ -369,6 +368,6 @@
     <button class="tab" data-view="settings"><span class="ico">⚙️</span>Instellingen</button>
   </nav>
 
-  <script type="module" src="js/app.js?v=20"></script>
+  <script type="module" src="js/app.js?v=21"></script>
 </body>
 </html>

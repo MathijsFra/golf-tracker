@@ -24,6 +24,9 @@ jobs:
       - name: Installeer dependencies
         run: pip install -r scripts/requirements.txt
 
+      - name: Installeer Playwright-browser
+        run: playwright install chromium --with-deps
+
       - name: Sync Toptracer -> Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

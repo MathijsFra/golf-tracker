@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
   if (!ENCRYPT_KEY_HEX) return json({ error: "GOLF_ENCRYPT_KEY niet ingesteld" }, 500);
 
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/user_settings?select=user_id,toptracer_username,toptracer_token&toptracer_token=not.is.null`,
+    `${SUPABASE_URL}/rest/v1/user_settings?select=user_id,toptracer_username,toptracer_token,toptracer_email,toptracer_password&toptracer_email=not.is.null`,
     { headers: { "apikey": token, "Authorization": `Bearer ${token}` } },
   );
   if (!res.ok) return json({ error: "Forbidden" }, 403);
@@ -56,12 +56,16 @@ Deno.serve(async (req: Request) => {
     user_id: string;
     toptracer_username: string;
     toptracer_token: string | null;
+    toptracer_email: string | null;
+    toptracer_password: string | null;
   }[];
 
   const result = await Promise.all(rows.map(async (row) => ({
     user_id: row.user_id,
     toptracer_username: row.toptracer_username,
     toptracer_token: await tryDecrypt(row.toptracer_token),
+    toptracer_email: await tryDecrypt(row.toptracer_email),
+    toptracer_password: await tryDecrypt(row.toptracer_password),
   })));
 
   return json(result);

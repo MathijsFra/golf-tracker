@@ -2,3 +2,4 @@ requests>=2.31
 beautifulsoup4>=4.12
 garminconnect>=0.2.20
 cryptography>=42
+playwright>=1.44

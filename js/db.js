@@ -266,7 +266,7 @@ export async function loadUserSettings() {
   if (mode !== "supabase") return {};
   try {
     const rows = await pgrest(
-      "user_settings?select=golfnl_username,golfnl_sync_status,garmin_username,garmin_auth_status,toptracer_username,toptracer_auth_status&limit=1",
+      "user_settings?select=golfnl_username,golfnl_sync_status,garmin_username,garmin_auth_status,toptracer_username,toptracer_auth_status,toptracer_auth_error&limit=1",
     );
     return Array.isArray(rows) && rows.length ? rows[0] : {};
   } catch { return {}; }
@@ -289,17 +289,17 @@ export async function getToptracerStatus() {
   return await res.json();
 }
 
-export async function exchangeToptracerCode(code, codeVerifier) {
+export async function saveToptracerCredentials(email, password) {
   if (mode !== "supabase") return;
   const token = await accessToken();
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/toptracer-auth`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/save-toptracer-creds`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
       "apikey": SUPABASE_ANON_KEY,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ code, code_verifier: codeVerifier }),
+    body: JSON.stringify({ email, password }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -313,6 +313,8 @@ export async function clearToptracerCredentials() {
   await pgrest(`user_settings?user_id=eq.${user.id}`, {
     method: "PATCH",
     body: JSON.stringify({
+      toptracer_email: null,
+      toptracer_password: null,
       toptracer_token: null,
       toptracer_auth_status: null,
       toptracer_auth_error: null,
