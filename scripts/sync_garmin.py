@@ -351,7 +351,7 @@ def main() -> None:
         email = os.environ.get("GARMIN_EMAIL") or require_env("GARMIN_EMAIL")
         password = os.environ.get("GARMIN_PASSWORD") or require_env("GARMIN_PASSWORD")
         log.info("Dump-modus: inloggen als %s…", email)
-        g = garmin_login(email, password)
+        g = garmin_login_password(email, password)
         summaries = as_list(retry_call(g.get_golf_summary, limit=200))
         print("\n=== RUWE SUMMARY (eerste scorekaart) ===")
         print(json.dumps(summaries[0] if summaries else {}, indent=2, ensure_ascii=False)[:4000])
