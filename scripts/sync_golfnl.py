@@ -328,37 +328,61 @@ def derive_par(holes_data: list[dict]) -> int | None:
 
 
 def upsert_course_tee(
-    course_name: str,
+    club_name: str,
     tee_name: str | None,
     holes: int,
+    loop_name: str = "",
     par: int | None = None,
     course_rating: float | None = None,
     slope_rating: int | None = None,
 ) -> tuple[str | None, str | None]:
     """
-    Upsert course + tee in Supabase. Geeft (course_id, course_tee_id) terug.
-    Velden die None zijn worden niet overschreven (laat bestaande waarden staan).
+    Upsert club → course (lus) → tee in Supabase. Geeft (course_id, course_tee_id) terug.
+    Schrijft geen None-waarden over bestaande data heen.
+    loop_name = de specifieke lus/baan (bijv. "Aak/Jol"); "" = onbekend.
     """
-    if not course_name:
+    if not club_name:
         return None, None
     try:
-        # 1. Course upserten op naam
-        course_row = {"name": course_name, "country": "NL", "updated_at": "now()"}
+        # 1. Club upserten op (name, country)
+        club_row = {"name": club_name, "country": "NL", "updated_at": "now()"}
         resp = request_with_retry(
             "POST",
-            f"{SUPABASE_URL}/rest/v1/courses",
+            f"{SUPABASE_URL}/rest/v1/clubs?on_conflict=name,country",
+            headers={**supabase_headers(),
+                     "Prefer": "resolution=merge-duplicates,return=representation"},
+            data=json.dumps(club_row),
+            timeout=15,
+        )
+        rows = resp.json()
+        if not rows or not isinstance(rows, list):
+            log.debug("Club upsert gaf geen rij terug: %s", resp.text[:100])
+            return None, None
+        club_id = rows[0]["id"]
+
+        # 2. Course (lus) upserten op (club_id, loop_name)
+        course_row = {
+            "club_id":   club_id,
+            "loop_name": loop_name,
+            "name":      club_name,   # achterwaartse compatibiliteit; veld wordt later verwijderd
+            "country":   "NL",
+            "updated_at": "now()",
+        }
+        resp2 = request_with_retry(
+            "POST",
+            f"{SUPABASE_URL}/rest/v1/courses?on_conflict=club_id,loop_name",
             headers={**supabase_headers(),
                      "Prefer": "resolution=merge-duplicates,return=representation"},
             data=json.dumps(course_row),
             timeout=15,
         )
-        rows = resp.json()
-        if not rows or not isinstance(rows, list):
-            log.debug("Course upsert gaf geen rij terug: %s", resp.text[:100])
+        rows2 = resp2.json()
+        if not rows2 or not isinstance(rows2, list):
+            log.debug("Course upsert gaf geen rij terug: %s", resp2.text[:100])
             return None, None
-        course_id = rows[0]["id"]
+        course_id = rows2[0]["id"]
 
-        # 2. Tee upserten als we een tee-naam hebben
+        # 3. Tee upserten als we een tee-naam hebben
         if not tee_name:
             return course_id, None
 
@@ -368,7 +392,6 @@ def upsert_course_tee(
             "tee_gender": "unspecified",
             "holes":      holes,
         }
-        # Alleen invullen als we de waarde hebben; niet overschrijven met None
         if par is not None:
             tee_row["par"] = par
         if course_rating is not None:
@@ -376,7 +399,7 @@ def upsert_course_tee(
         if slope_rating is not None:
             tee_row["slope_rating"] = slope_rating
 
-        resp2 = request_with_retry(
+        resp3 = request_with_retry(
             "POST",
             f"{SUPABASE_URL}/rest/v1/course_tees",
             headers={**supabase_headers(),
@@ -384,12 +407,12 @@ def upsert_course_tee(
             data=json.dumps(tee_row),
             timeout=15,
         )
-        tee_rows = resp2.json()
+        tee_rows = resp3.json()
         course_tee_id = tee_rows[0]["id"] if tee_rows and isinstance(tee_rows, list) else None
         return course_id, course_tee_id
 
     except Exception as e:  # noqa: BLE001
-        log.debug("Course/tee upsert mislukt (niet kritiek): %s", e)
+        log.debug("Club/course/tee upsert mislukt (niet kritiek): %s", e)
         return None, None
 
 
@@ -580,7 +603,8 @@ def sync_one_user(username: str, password: str, user_id: str) -> int:
     for rd in rounds:
         par = derive_par(rd.get("holes_data") or [])
         course_id, course_tee_id = upsert_course_tee(
-            course_name=rd.get("course", ""),
+            club_name=rd.get("course", ""),
+            loop_name="",   # TODO: loop_name extraheren uit golf.nl HTML
             tee_name=rd.get("tee"),
             holes=rd.get("holes", 18),
             par=par,
