@@ -361,6 +361,17 @@
       <div class="bag-header">
         <h2 class="section-title">Club Bag</h2>
         <p class="bag-sub" id="bagSub"></p>
+        <div class="bag-controls">
+          <div class="bag-toggle" id="bagPeriodToggle">
+            <button class="toggle-btn active" data-period="all">Altijd</button>
+            <button class="toggle-btn" data-period="recent">Maand</button>
+          </div>
+          <div class="bag-toggle" id="bagMetricToggle">
+            <button class="toggle-btn active" data-metric="median">Mediaan</button>
+            <button class="toggle-btn" data-metric="avg">Gemiddeld</button>
+            <button class="toggle-btn" data-metric="max">Max</button>
+          </div>
+        </div>
       </div>
       <div id="bagEmpty" class="empty-note" hidden>
         Koppel Toptracer in <button class="link-btn" id="bagGoSettings">Instellingen</button> om je club bag te zien.

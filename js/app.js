@@ -6,7 +6,7 @@ import {
   triggerGarminAuth, getGarminAuthStatus, submitGarminOtp,
   resetGarminAuthStatus, clearGarminCredentials, clearGolfnlCredentials,
   getClubBag, getToptracerStatus, saveToptracerCredentials, clearToptracerCredentials,
-} from "./db.js?v=21";
+} from "./db.js?v=22";
 import { computeStats } from "./stats.js?v=12";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=11";
 
@@ -134,7 +134,6 @@ function card(label, value, meta) {
 function emptyNote(t) { return `<p class="empty-note">${esc(t)}</p>`; }
 
 // ---------- club bag ----------
-// Groepen bepalen volgorde en sectiekoppen in de Bag-weergave
 const CLUB_GROUPS = [
   { label: "Woods",   types: ["driver","3_wood","5_wood","7_wood","9_wood"] },
   { label: "Hybrids", types: ["1_hybrid","2_hybrid","3_hybrid","4_hybrid","5_hybrid","hybrid"] },
@@ -142,10 +141,33 @@ const CLUB_GROUPS = [
   { label: "Wedges",  types: ["pitching_wedge","gap_wedge","sand_wedge","lob_wedge"] },
   { label: "Putter",  types: ["putter"] },
 ];
-// Flat volgorde voor backwards-compat
 const CLUB_ORDER = CLUB_GROUPS.flatMap((g) => g.types);
 
-// ---------- bag view ----------
+const BAG_METRIC_FIELD = { median: "median_carry_m", avg: "avg_carry_m", max: "max_carry_m" };
+const BAG_METRIC_LABEL = { median: "mediaan", avg: "gemiddeld", max: "max" };
+
+let bagPeriod = "all";
+let bagMetric = "median";
+
+function initBagToggles() {
+  $("#bagPeriodToggle")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-period]");
+    if (!btn) return;
+    bagPeriod = btn.dataset.period;
+    $("#bagPeriodToggle").querySelectorAll(".toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    renderBagView();
+  });
+  $("#bagMetricToggle")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-metric]");
+    if (!btn) return;
+    bagMetric = btn.dataset.metric;
+    $("#bagMetricToggle").querySelectorAll(".toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    renderBagGrid();
+  });
+}
+
+let _bagClubs = [];
+
 async function renderBagView() {
   const emptyEl = $("#bagEmpty");
   const grid    = $("#bagClubGrid");
@@ -154,46 +176,53 @@ async function renderBagView() {
 
   grid.innerHTML = `<div class="bag-loading">Laden…</div>`;
   try {
-    const clubs = await getClubBag();
-    if (!clubs.length) {
+    _bagClubs = await getClubBag(bagPeriod);
+    if (!_bagClubs.length) {
       grid.innerHTML = "";
       if (emptyEl) emptyEl.hidden = false;
       if (sub) sub.textContent = "";
       return;
     }
     if (emptyEl) emptyEl.hidden = true;
-
-    const sorted = clubs.slice().sort((a, b) => {
-      const ai = CLUB_ORDER.indexOf(a.club_type);
-      const bi = CLUB_ORDER.indexOf(b.club_type);
-      if (ai === -1 && bi === -1) return 0;
-      if (ai === -1) return 1;
-      if (bi === -1) return -1;
-      return ai - bi;
-    });
-
-    if (sub) sub.textContent = `${sorted.length} clubs via Toptracer`;
-
-    // Render per groep met sectiekop
-    const byType = Object.fromEntries(sorted.map((c) => [c.club_type, c]));
-    let html = "";
-    for (const group of CLUB_GROUPS) {
-      const inGroup = group.types.map((t) => byType[t]).filter(Boolean);
-      if (!inGroup.length) continue;
-      html += `<div class="bag-group-label">${group.label}</div>`;
-      html += `<div class="stat-grid bag-group-grid">`;
-      html += inGroup.map((c) => {
-        const carry = c.median_carry_m != null ? `${Math.round(c.median_carry_m)} m` : "—";
-        const sub   = c.shot_count ? `mediaan · ${c.shot_count} slagen` : "carry";
-        return card(esc(c.club_display_name || c.club_type), carry, sub);
-      }).join("");
-      html += `</div>`;
-    }
-    grid.innerHTML = html;
+    if (sub) sub.textContent = `${_bagClubs.length} clubs via Toptracer`;
+    renderBagGrid();
   } catch {
     grid.innerHTML = "";
     if (emptyEl) emptyEl.hidden = false;
   }
+}
+
+function renderBagGrid() {
+  const grid = $("#bagClubGrid");
+  if (!grid || !_bagClubs.length) return;
+
+  const field = BAG_METRIC_FIELD[bagMetric];
+  const label = BAG_METRIC_LABEL[bagMetric];
+
+  const sorted = _bagClubs.slice().sort((a, b) => {
+    const ai = CLUB_ORDER.indexOf(a.club_type);
+    const bi = CLUB_ORDER.indexOf(b.club_type);
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  const byType = Object.fromEntries(sorted.map((c) => [c.club_type, c]));
+  let html = "";
+  for (const group of CLUB_GROUPS) {
+    const inGroup = group.types.map((t) => byType[t]).filter(Boolean);
+    if (!inGroup.length) continue;
+    html += `<div class="bag-group-label">${group.label}</div>`;
+    html += `<div class="stat-grid bag-group-grid">`;
+    html += inGroup.map((c) => {
+      const val = c[field] != null ? `${Math.round(c[field])} m` : "—";
+      const sub = c.shot_count ? `${label} · ${c.shot_count} slagen` : label;
+      return card(esc(c.club_display_name || c.club_type), val, sub);
+    }).join("");
+    html += `</div>`;
+  }
+  grid.innerHTML = html;
 }
 
 // ---------- round list ----------
@@ -765,6 +794,7 @@ async function main() {
   $("#cancelBtn").addEventListener("click", () => { resetForm(); switchView("rounds"); });
   $("#filterHoles").addEventListener("change", renderRoundList);
   $("#bagGoSettings")?.addEventListener("click", () => switchView("settings"));
+  initBagToggles();
   $("#f_shots").addEventListener("change", onShotsSelected);
   $("#parseBtn").addEventListener("click", onParse);
   $("#f_holes").addEventListener("change", () => buildHolesGrid(collectHolesGrid()));

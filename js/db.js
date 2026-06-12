@@ -274,10 +274,11 @@ export async function loadUserSettings() {
   } catch { return {}; }
 }
 
-export async function getClubBag() {
+export async function getClubBag(period = "all") {
   if (mode !== "supabase") return [];
   try {
-    return await pgrest("toptracer_club_stats?select=*&order=median_carry_m.desc.nullslast");
+    const view = period === "recent" ? "toptracer_club_stats_recent" : "toptracer_club_stats";
+    return await pgrest(`${view}?select=*`);
   } catch { return []; }
 }
 

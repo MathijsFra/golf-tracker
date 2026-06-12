@@ -254,8 +254,17 @@ html, body {
 
 /* ---------- Bag view ---------- */
 .bag-header { padding: 0 16px 4px; }
-.bag-sub { font-size: 0.82rem; color: var(--muted); margin: 0; }
+.bag-sub { font-size: 0.82rem; color: var(--muted); margin: 0 0 8px; }
 .bag-loading { color: var(--muted); font-size: 0.9rem; padding: 24px 16px; text-align: center; }
+.bag-controls { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 4px; }
+.bag-toggle { display: flex; background: var(--bg-card); border-radius: 20px; padding: 2px; }
+.toggle-btn {
+  background: none; border: none; border-radius: 18px;
+  padding: 4px 12px; font-size: 0.78rem; font-weight: 500;
+  color: var(--muted); cursor: pointer; transition: background 0.15s, color 0.15s;
+  line-height: 1.4;
+}
+.toggle-btn.active { background: var(--accent); color: #fff; }
 .bag-group-label {
   font-size: 0.72rem;
   font-weight: 700;
