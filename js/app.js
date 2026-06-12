@@ -135,11 +135,11 @@ function emptyNote(t) { return `<p class="empty-note">${esc(t)}</p>`; }
 
 // ---------- club bag ----------
 const CLUB_GROUPS = [
-  { label: "Woods",   types: ["driver","3_wood","5_wood","7_wood","9_wood"] },
-  { label: "Hybrids", types: ["1_hybrid","2_hybrid","3_hybrid","4_hybrid","5_hybrid","hybrid"] },
-  { label: "Irons",   types: ["1_iron","2_iron","3_iron","4_iron","5_iron","6_iron","7_iron","8_iron","9_iron"] },
-  { label: "Wedges",  types: ["pitching_wedge","gap_wedge","sand_wedge","lob_wedge"] },
-  { label: "Putter",  types: ["putter"] },
+  { label: "Woods",   types: ["Driver","ThreeWood","FiveWood","SevenWood","NineWood"] },
+  { label: "Hybrids", types: ["OneHybrid","TwoHybrid","ThreeHybrid","FourHybrid","FiveHybrid","Hybrid"] },
+  { label: "Irons",   types: ["OneIron","TwoIron","ThreeIron","FourIron","FiveIron","SixIron","SevenIron","EightIron","NineIron"] },
+  { label: "Wedges",  types: ["PitchingWedge","GapWedge","SandWedge","LobWedge"] },
+  { label: "Putter",  types: ["Putter"] },
 ];
 const CLUB_ORDER = CLUB_GROUPS.flatMap((g) => g.types);
 
