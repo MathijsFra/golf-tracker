@@ -118,8 +118,7 @@ def main() -> None:
         set_status("failed", error=msg)
         sys.exit(1)
 
-    # MFA-callback voor garth-gebaseerde garminconnect (>=0.2.x).
-    # Patch builtins.input als extra fallback voor oudere versies.
+    # MFA-callback die de OTP-code ophaalt via Supabase (de app stuurt hem in).
     def prompt_mfa() -> str:
         print("Garmin vraagt om verificatiecode (MFA).", flush=True)
         set_status("otp_needed")
@@ -131,17 +130,41 @@ def main() -> None:
             set_status("failed", error="Timeout: geen verificatiecode ingevoerd binnen 5 minuten.")
             raise SystemExit(1) from exc
 
+    # Patch builtins.input als vangnet voor varianten die input() aanroepen.
     original_input = builtins.input
-    builtins.input = prompt_mfa  # fallback voor oudere garminconnect
+    builtins.input = prompt_mfa
 
     try:
+        import inspect
+        import importlib.metadata
         from garminconnect import Garmin
-        print(f"Inloggen op Garmin Connect als {username}…", flush=True)
-        g = Garmin(email=username, password=password)
+
         try:
-            g.login(prompt_mfa=prompt_mfa)  # nieuw garth-gebaseerd API
-        except TypeError:
-            g.login()  # oudere versie: gebruikt builtins.input-patch
+            gc_version = importlib.metadata.version("garminconnect")
+        except Exception:
+            gc_version = "onbekend"
+        print(f"garminconnect versie: {gc_version}", flush=True)
+        print(f"Inloggen op Garmin Connect als {username}…", flush=True)
+
+        # Bepaal welke API beschikbaar is via introspectie.
+        init_params = inspect.signature(Garmin.__init__).parameters
+
+        if "prompt_mfa" in init_params:
+            # garminconnect >=0.2.x: prompt_mfa hoort in de constructor.
+            print("API: prompt_mfa via constructor.", flush=True)
+            g = Garmin(email=username, password=password, prompt_mfa=prompt_mfa)
+        else:
+            print("API: prompt_mfa niet in constructor, val terug op builtins.input.", flush=True)
+            g = Garmin(email=username, password=password)
+
+        login_params = inspect.signature(g.login).parameters
+        if "pin_func" in login_params:
+            g.login(pin_func=prompt_mfa)
+        elif "prompt_mfa" in login_params:
+            g.login(prompt_mfa=prompt_mfa)
+        else:
+            g.login()  # builtins.input-patch als vangnet
+
     except SystemExit:
         raise
     except Exception as e:
