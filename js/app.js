@@ -177,7 +177,7 @@ function roundCard(r, withActions) {
       ${r.notes ? `<div class="round-notes">${esc(r.notes)}</div>` : ""}
       ${!garmin && !hd.length && !shots.length && !r.notes ? `<div class="empty-garmin">Geen extra details voor deze ronde.</div>` : ""}
       ${withActions ? `<div class="detail-actions">
-        ${!r.non_qualifying ? `<button class="btn btn-ghost btn-sm" data-edit="${r.id}">Bewerken</button>` : ""}
+        ${(!r.non_qualifying && !r.golfnl_scorecard_id) ? `<button class="btn btn-ghost btn-sm" data-edit="${r.id}">Bewerken</button>` : ""}
         <button class="btn btn-danger btn-sm" data-del="${r.id}" ${r.non_qualifying ? 'data-nq="true"' : ""}>Verwijderen</button>
       </div>` : ""}
     </div>
