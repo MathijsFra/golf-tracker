@@ -128,7 +128,7 @@ async function accessToken() {
 
 export async function getRounds() {
   if (mode === "supabase") {
-    return await pgrest(`${TABLE}?select=*&order=date`);
+    return await pgrest(`${TABLE}?select=*&deleted_at=is.null&order=date`);
   }
   return readLocal().slice().sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -169,6 +169,18 @@ export async function updateRound(id, round) {
 export async function deleteRound(id) {
   if (mode === "supabase") {
     await pgrest(`${TABLE}?id=eq.${id}`, { method: "DELETE" });
+    return;
+  }
+  writeLocal(readLocal().filter((r) => r.id !== id));
+}
+
+export async function softDeleteRound(id) {
+  if (mode === "supabase") {
+    await pgrest(`${TABLE}?id=eq.${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ deleted_at: new Date().toISOString() }),
+      headers: { "Prefer": "return=minimal" },
+    });
     return;
   }
   writeLocal(readLocal().filter((r) => r.id !== id));

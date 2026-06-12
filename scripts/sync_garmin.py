@@ -163,7 +163,7 @@ def sb_get_user_credentials() -> list[dict]:
 def sb_get_rounds(user_id: str) -> list[dict]:
     r = request_with_retry(
         "GET",
-        f"{SUPABASE_URL}/rest/v1/rounds?select=id,date,holes,holes_data&user_id=eq.{user_id}",
+        f"{SUPABASE_URL}/rest/v1/rounds?select=id,date,holes,holes_data,deleted_at&user_id=eq.{user_id}",
         headers=sb_headers(),
     )
     return r.json()
@@ -295,8 +295,11 @@ def sync_user(user_id: str, g: Garmin) -> tuple[int, int]:
             log.warning("  Scorekaart %s (%s) overgeslagen: %s", scorecard_id(s), date, e)
             continue
 
+        # Splits in actief (niet soft-deleted) en alle kandidaten.
+        active_candidates = [c for c in candidates if not c.get("deleted_at")]
+
         if not candidates:
-            # Geen overeenkomende ronde in Supabase → maak NQ-ronde aan.
+            # Geen ronde in Supabase voor deze datum → maak NQ-ronde aan.
             if not garmin_holes:
                 log.debug("  %s: geen hole-data, NQ-ronde overgeslagen.", date)
                 continue
@@ -312,13 +315,18 @@ def sync_user(user_id: str, g: Garmin) -> tuple[int, int]:
                 log.warning("  NQ-ronde aanmaken mislukt voor %s: %s", date, e)
             continue
 
+        if not active_candidates:
+            # Alleen soft-deleted rondes → gebruiker heeft ze bewust verwijderd; overslaan.
+            log.debug("  %s: alleen soft-deleted ronde(s) aanwezig; overgeslagen.", date)
+            continue
+
         if not any(h.get("putts") is not None or h.get("fairway") or h.get("penalties") is not None
                    for h in garmin_holes):
             continue
 
-        target = candidates[0]
-        if len(candidates) > 1:
-            target = next((c for c in candidates if c.get("holes") == len(garmin_holes)), candidates[0])
+        target = active_candidates[0]
+        if len(active_candidates) > 1:
+            target = next((c for c in active_candidates if c.get("holes") == len(garmin_holes)), active_candidates[0])
 
         try:
             merged = merge_into_holes(target.get("holes_data"), garmin_holes)

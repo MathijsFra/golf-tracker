@@ -1,11 +1,11 @@
 import {
-  initDb, getMode, getRounds, addRound, updateRound, deleteRound,
+  initDb, getMode, getRounds, addRound, updateRound, deleteRound, softDeleteRound,
   processImage, saveScreenshot, resolveScreenshot, parseScreenshots,
   getUser, signIn, signUp, signOut, onAuthChange, triggerWorkflow,
   loadUserSettings, saveGolfnlCredentials, saveGarminCredentials,
   triggerGarminAuth, getGarminAuthStatus, submitGarminOtp,
   resetGarminAuthStatus, clearGarminCredentials, clearGolfnlCredentials,
-} from "./db.js?v=17";
+} from "./db.js?v=18";
 import { computeStats } from "./stats.js?v=12";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=11";
 
@@ -177,8 +177,8 @@ function roundCard(r, withActions) {
       ${r.notes ? `<div class="round-notes">${esc(r.notes)}</div>` : ""}
       ${!garmin && !hd.length && !shots.length && !r.notes ? `<div class="empty-garmin">Geen extra details voor deze ronde.</div>` : ""}
       ${withActions ? `<div class="detail-actions">
-        <button class="btn btn-ghost btn-sm" data-edit="${r.id}">Bewerken</button>
-        <button class="btn btn-danger btn-sm" data-del="${r.id}">Verwijderen</button>
+        ${!r.non_qualifying ? `<button class="btn btn-ghost btn-sm" data-edit="${r.id}">Bewerken</button>` : ""}
+        <button class="btn btn-danger btn-sm" data-del="${r.id}" ${r.non_qualifying ? 'data-nq="true"' : ""}>Verwijderen</button>
       </div>` : ""}
     </div>
   </div>`;
@@ -268,7 +268,11 @@ function bindRoundCards(scope) {
   scope.querySelectorAll("[data-del]").forEach((b) =>
     b.addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (confirm("Deze ronde verwijderen?")) { await deleteRound(b.dataset.del); await refresh(); }
+      if (confirm("Deze ronde verwijderen?")) {
+        if (b.dataset.nq) await softDeleteRound(b.dataset.del);
+        else await deleteRound(b.dataset.del);
+        await refresh();
+      }
     }));
   hydrateShots(scope);
 }

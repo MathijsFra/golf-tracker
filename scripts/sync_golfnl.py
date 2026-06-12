@@ -165,6 +165,7 @@ def parse_scores_html(html: str) -> list[dict]:
                 details[lab.get_text(strip=True)] = txt.get_text(" ", strip=True)
 
         total = to_int(details.get("Totaal aantal slagen"))
+        is_qualifying = details.get("Qualifying") == "Ja"
         rounds.append({
             "_scorecardid": label.get("id"),   # intern: voor de detail-/scorekaartpagina
             "date": iso_date(sub.get_text(strip=True)),
@@ -178,7 +179,8 @@ def parse_scores_html(html: str) -> list[dict]:
             "course_handicap": to_int(details.get("Baanhandicap")),
             "holes_data": [],
             "screenshots": [],
-            "notes": None if details.get("Qualifying") == "Ja" else "Non-qualifying",
+            "notes": None if is_qualifying else "Non-qualifying",
+            "non_qualifying": not is_qualifying,
         })
     return rounds
 
@@ -280,11 +282,11 @@ def sb_get_user_settings() -> list[dict]:
 
 
 def existing_rounds(user_id: str) -> list[dict]:
-    """Haalt bestaande rondes van dit account op."""
+    """Haalt bestaande rondes van dit account op (inclusief soft-deleted)."""
     resp = request_with_retry(
         "GET",
         f"{SUPABASE_URL}/rest/v1/rounds"
-        f"?select=id,date,holes,sd,holes_data,golfnl_scorecard_id&user_id=eq.{user_id}",
+        f"?select=id,date,holes,sd,holes_data,golfnl_scorecard_id,deleted_at&user_id=eq.{user_id}",
         headers=supabase_headers(),
     )
     return resp.json()
@@ -442,11 +444,17 @@ def sync_one_user(username: str, password: str, user_id: str) -> int:
     for rd in existing_golfnl:
         sb_id = find_sb_id(rd)
         sb_round = by_id.get(sb_id, {})
+        # Soft-deleted rondes niet aanraken — de gebruiker heeft ze bewust verwijderd.
+        if sb_round.get("deleted_at"):
+            continue
         fields: dict = {}
         # Basisvelden uit de scorelijst
         for f in ("score", "course_handicap", "notes"):
             if rd.get(f) is not None:
                 fields[f] = rd[f]
+        # non_qualifying altijd meenemen (boolean, ook False is een waarde)
+        if rd.get("non_qualifying") is not None:
+            fields["non_qualifying"] = rd["non_qualifying"]
         # Per-hole data (alleen als gevuld)
         if rd.get("holes_data"):
             fields["holes"] = rd["holes"]
