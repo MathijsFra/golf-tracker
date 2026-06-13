@@ -7,7 +7,7 @@ import {
   resetGarminAuthStatus, clearGarminCredentials, clearGolfnlCredentials,
   getClubBag, getToptracerStatus, saveToptracerCredentials, clearToptracerCredentials,
   saveRoundInsights, patchRoundStats,
-} from "./db.js?v=25";
+} from "./db.js?v=26";
 import { computeStats } from "./stats.js?v=12";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=11";
 
@@ -380,7 +380,7 @@ function roundCard(r, withActions) {
         ${gcell(r.bunkers, "Bunkers")}
         ${gcell(r.bunker_saves, "Saves")}
       </div>` : ""}
-      ${withActions ? holesEditGrid(r) : hd.length ? holesTable(hd) : ""}
+      ${hd.length ? (withActions && r.putts == null && r.gir == null ? holesEditGrid(r) : holesTable(hd)) : (withActions && r.putts == null && r.gir == null ? holesEditGrid(r) : "")}
       ${shots.length ? `<div class="shot-thumbs">${shots.map((u) => `<a class="shot-link" data-shot="${esc(u)}" target="_blank" rel="noopener"><img alt="screenshot" loading="lazy"></a>`).join("")}</div>` : ""}
       ${r.notes ? `<div class="round-notes">${esc(r.notes)}</div>` : ""}
       ${!hasContent ? `<div class="empty-garmin">Geen extra details voor deze ronde.</div>` : ""}
@@ -430,11 +430,11 @@ function holesEditGrid(r) {
   const rows = Array.from({ length: n }, (_, i) => {
     const hole = i + 1;
     const h = byHole[hole] || {};
-    return `<tr><td class="hcol">${hole}</td><td>${girSel(hole, h.gir)}</td><td>${fwSel(hole, h.fairway)}</td><td>${numIn("putts", hole, h.putts, 9)}</td><td>${numIn("penalties", hole, h.penalties, 9)}</td></tr>`;
+    return `<tr><td class="hcol">${hole}</td><td>${h.par ?? "—"}</td><td>${h.score ?? "—"}</td><td>${girSel(hole, h.gir)}</td><td>${fwSel(hole, h.fairway)}</td><td>${numIn("putts", hole, h.putts, 9)}</td><td>${numIn("penalties", hole, h.penalties, 9)}</td></tr>`;
   }).join("");
   return `<div class="holes-edit-wrap">
     <table class="holes-table">
-      <thead><tr><th>Hole</th><th>GIR</th><th>FW</th><th>Putts</th><th>Pen</th></tr></thead>
+      <thead><tr><th>Hole</th><th>Par</th><th>Score</th><th>GIR</th><th>FW</th><th>Putts</th><th>Pen</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <button class="btn btn-primary btn-sm holes-save-btn" data-holessave="${r.id}">Opslaan</button>
