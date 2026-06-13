@@ -312,7 +312,12 @@ export async function resolveScreenshot(value) {
 
 // ---------- Gebruikersinstellingen ----------
 export async function signUp(email, password) {
-  const { data, error } = await client.auth.signUp({ email, password });
+  const redirectTo = window.location.origin + window.location.pathname;
+  const { data, error } = await client.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: redirectTo },
+  });
   if (error) {
     if (error.message.toLowerCase().includes("already registered")) {
       throw new Error("Dit e-mailadres is al geregistreerd.");
