@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """
-Backfill CR/slope voor alle golfbanen via de mijn.golf.nl interne API.
+Vul de database met CR/slope voor alle Nederlandse golfbanen via de
+mijn.golf.nl interne API.
 
-Strategie (ontdekt via reverse-engineering van /mijn-spel/scores/scorekaart-aanmaken):
-  1. Login op golf.nl en haal het scorekaart-aanmaakformulier op → alle 248 NL-banen
-     met hun interne courseId staan in <select id="form-course">.
-  2. Voor elke baan met ontbrekende CR/slope: match de clubnaam op golf.nl en roep
-     GET /api/mygame/getcourse?courseId=<id> aan.
-     Dit endpoint geeft Loops[] met Categories[] die CourseRating + SlopeRating bevatten.
-  3. Koppel elke Category via CategoryIndex aan de standaard KNLTB teekleur:
-     8=Wit/man, 9=Geel/man, 10=Blauw/man, 11=Rood/man, 12=Oranje/man,
-     13=Wit/vrouw, 14=Geel/vrouw, 15=Rood/vrouw, 16=Oranje/vrouw.
-  4. Sla CR+slope op in course_tees via een directe PATCH (geen scorekaartpagina nodig).
+Eenmalig of een paar keer per jaar uitvoeren om de course_tees-tabel compleet
+te houden. Verwerkt alle ~248 banen — niet gebruikersspecifiek.
+
+Aanpak (reverse-engineering van /mijn-spel/scores/scorekaart-aanmaken):
+  1. Login op golf.nl; alle banen staan in <select id="form-course">.
+  2. Per baan: GET /api/mygame/getcourse?courseId=<id>
+     → Loops[] met Categories[] die CourseRating + SlopeRating bevatten.
+  3. CategoryIndex → (teekleur, geslacht) via standaard KNLTB-mapping:
+       8=Wit/man  9=Geel/man  10=Blauw/man  11=Rood/man  12=Oranje/man
+       13=Wit/vrouw  14=Geel/vrouw  15=Rood/vrouw  16=Oranje/vrouw
+  4. Upsert: club → lus (course) → tee met CR+slope.
 
 Gebruik:
-  python scripts/scrape_cr_slope.py [backfill|status]
+  python scripts/scrape_cr_slope.py [fill-all|status]
 
 Env vars:
-  SUPABASE_URL, SUPABASE_SERVICE_KEY  — database
-  GOLF_USER_ID                        — optioneel: beperkt tot één account
-  LOG_LEVEL=DEBUG                     — uitgebreide output
+  SUPABASE_URL, SUPABASE_SERVICE_KEY — database
+  GOLFNL_USERNAME, GOLFNL_PASSWORD  — één golf.nl-account (alleen voor de login)
+  LOG_LEVEL=DEBUG                   — uitgebreide output
 """
 
 import json
@@ -43,13 +45,11 @@ from sync_golfnl import (
 
 log = setup_logging("scrape_cr_slope")
 
-GOLF_USER_ID = os.environ.get("GOLF_USER_ID", "")
-
 SCORECARD_CREATE_URL = "https://mijn.golf.nl/mijn-spel/scores/scorekaart-aanmaken"
 GETCOURSE_URL = "https://mijn.golf.nl/api/mygame/getcourse"
 
 # Standaard KNLTB CategoryIndex → (teekleur, geslacht)
-# Bevestigd door PHcp-matching op Golf Club Zeewolde 18h Aak-Botter.
+# Bevestigd via PHcp-matching op Golf Club Zeewolde 18h Aak-Botter.
 CATEGORY_MAP: dict[int, tuple[str, str]] = {
     8:  ("Wit",    "male"),
     9:  ("Geel",   "male"),
@@ -62,51 +62,61 @@ CATEGORY_MAP: dict[int, tuple[str, str]] = {
     16: ("Oranje", "female"),
 }
 
+# Vertraging tussen API-aanroepen om de server niet te overbelasten.
+REQUEST_DELAY = 0.3  # seconden
+
 
 # ---------------------------------------------------------------------------
 # Supabase helpers
 # ---------------------------------------------------------------------------
 
-def sb_get(path: str, params: str = "") -> list[dict]:
-    url = f"{SUPABASE_URL}/rest/v1/{path}{params}"
-    resp = requests.get(url, headers=supabase_headers(), timeout=20)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def sb_patch(path: str, body: dict) -> None:
-    resp = requests.patch(
+def sb_post(path: str, body: dict) -> list[dict]:
+    resp = request_with_retry(
+        "POST",
         f"{SUPABASE_URL}/rest/v1/{path}",
-        headers={**supabase_headers(), "Prefer": "return=minimal"},
+        headers={**supabase_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
         data=json.dumps(body),
         timeout=15,
     )
+    result = resp.json()
+    if not isinstance(result, list) or not result:
+        raise RuntimeError(f"Supabase upsert gaf geen rij terug voor {path}: {resp.text[:200]}")
+    return result
+
+
+def sb_get(path: str, params: str = "") -> list[dict]:
+    resp = requests.get(
+        f"{SUPABASE_URL}/rest/v1/{path}{params}",
+        headers=supabase_headers(),
+        timeout=20,
+    )
     resp.raise_for_status()
+    return resp.json()
 
 
 # ---------------------------------------------------------------------------
 # golf.nl API helpers
 # ---------------------------------------------------------------------------
 
-def fetch_course_options(session: requests.Session) -> dict[str, int]:
-    """Haal alle clubnamen + courseIds op uit het scorekaart-aanmaakformulier."""
+def fetch_course_options(session: requests.Session) -> list[tuple[str, int]]:
+    """Haal alle (clubnaam, courseId)-paren op uit het scorekaart-formulier."""
     r = request_with_retry(
         "GET", SCORECARD_CREATE_URL, session=session,
         headers={"Referer": "https://mijn.golf.nl/dashboard"},
     )
     soup = BeautifulSoup(r.text, "html.parser")
-    options: dict[str, int] = {}
+    options = []
     for opt in soup.select("#form-course option"):
         val = opt.get("value", "")
         name = opt.get_text(strip=True)
         if val and name and str(val).isdigit():
-            options[name] = int(val)
-    log.info("%d golfbanen gevonden in scorekaart-formulier.", len(options))
+            options.append((name, int(val)))
+    log.info("%d golfbanen gevonden in het scorekaart-formulier.", len(options))
     return options
 
 
 def fetch_course_data(session: requests.Session, course_id: int) -> dict:
-    """Haal lussen + CR/slope op voor één baan via de interne API."""
+    """Haal lussen + CR/slope op voor één baan (interne golf.nl API)."""
     r = request_with_retry(
         "GET", f"{GETCOURSE_URL}?courseId={course_id}", session=session,
         headers={
@@ -118,170 +128,110 @@ def fetch_course_data(session: requests.Session, course_id: int) -> dict:
 
 
 def loop_holes(loop_name: str) -> int | None:
-    """Parseer het aantal holes uit de loop-naam (bijv. '18 holes Aak-Botter' → 18)."""
+    """Parseer het aantal holes uit de loop-naam ('18 holes Aak-Botter' → 18)."""
     m = re.match(r"(\d+)\s*holes?", loop_name or "", re.IGNORECASE)
     return int(m.group(1)) if m else None
 
 
-def find_course_id(options: dict[str, int], club_name: str) -> int | None:
-    """Zoek een golf.nl courseId op basis van clubnaam (exact → case-insensitief → substring)."""
-    if club_name in options:
-        return options[club_name]
-    lower = club_name.lower()
-    for name, cid in options.items():
-        if name.lower() == lower:
-            return cid
-    for name, cid in options.items():
-        if lower in name.lower() or name.lower() in lower:
-            return cid
-    return None
-
-
 # ---------------------------------------------------------------------------
-# Kern logica
+# Database upsert
 # ---------------------------------------------------------------------------
 
-def get_rounds_missing_cr_slope(user_id: str) -> list[dict]:
-    """Rondes met scorecard_id + course_tee_id maar zonder CR/slope in de tee."""
-    rounds = sb_get(
-        "rounds",
-        f"?select=id,course_tee_id,course,tee,holes"
-        f"&golfnl_scorecard_id=not.is.null"
-        f"&course_tee_id=not.is.null"
-        f"&user_id=eq.{user_id}"
-        f"&deleted_at=is.null",
+def upsert_tee(
+    club_name: str,
+    loop_name: str,
+    holes: int,
+    tee_name: str,
+    tee_gender: str,
+    course_rating: float | None,
+    slope_rating: int | None,
+) -> bool:
+    """Upsert club → lus → tee met CR/slope. Geeft True als succesvol."""
+    # 1. Club
+    club_rows = sb_post(
+        "clubs?on_conflict=name,country",
+        {"name": club_name, "country": "NL", "updated_at": "now()"},
     )
-    if not rounds:
-        return []
+    club_id = club_rows[0]["id"]
 
-    tee_ids = list({r["course_tee_id"] for r in rounds if r.get("course_tee_id")})
-    if not tee_ids:
-        return []
-
-    ids_csv = ",".join(tee_ids)
-    tees = sb_get("course_tees", f"?id=in.({ids_csv})&select=id,tee_name,course_rating,slope_rating")
-    tees_by_id = {t["id"]: t for t in tees}
-
-    missing = []
-    for r in rounds:
-        tee = tees_by_id.get(r.get("course_tee_id"))
-        if tee and (tee.get("course_rating") is None or tee.get("slope_rating") is None):
-            r["_tee_id"] = tee["id"]
-            r["_tee_name"] = tee.get("tee_name") or r.get("tee") or ""
-            missing.append(r)
-
-    log.info(
-        "Gebruiker %s: %d ronde(s) met ontbrekende CR/slope (van %d totaal).",
-        user_id, len(missing), len(rounds),
+    # 2. Lus (course)
+    course_rows = sb_post(
+        "courses?on_conflict=club_id,loop_name",
+        {"club_id": club_id, "loop_name": loop_name, "name": club_name,
+         "country": "NL", "updated_at": "now()"},
     )
-    return missing
+    course_id = course_rows[0]["id"]
 
-
-def update_course_tee(tee_id: str, course_rating, slope_rating) -> bool:
-    patch: dict = {}
+    # 3. Tee
+    tee_row: dict = {
+        "course_id":  course_id,
+        "tee_name":   tee_name,
+        "tee_gender": tee_gender,
+        "holes":      holes,
+    }
     if course_rating is not None:
-        patch["course_rating"] = course_rating
+        tee_row["course_rating"] = course_rating
     if slope_rating is not None:
-        patch["slope_rating"] = slope_rating
-    if not patch:
-        return False
-    sb_patch(f"course_tees?id=eq.{tee_id}", patch)
+        tee_row["slope_rating"] = slope_rating
+
+    sb_post("course_tees?on_conflict=course_id,tee_name,tee_gender,holes", tee_row)
     return True
 
 
-def backfill_one_user(username: str, password: str, user_id: str) -> tuple[int, int]:
-    """Backfill CR/slope voor één gebruiker. Geeft (bijgewerkt, mislukt) terug."""
-    _gn.GOLFNL_USERNAME = username
-    _gn.GOLFNL_PASSWORD = password
+# ---------------------------------------------------------------------------
+# Hoofd-logica
+# ---------------------------------------------------------------------------
 
-    missing = get_rounds_missing_cr_slope(user_id)
-    if not missing:
-        log.info("Geen rondes met ontbrekende CR/slope voor gebruiker %s.", user_id)
-        return 0, 0
+def fill_all(session: requests.Session) -> tuple[int, int, int]:
+    """
+    Verwerk alle banen en sla CR/slope op voor elke lus + tee.
+    Geeft (verwerkte banen, opgeslagen tees, mislukte banen) terug.
+    """
+    courses = fetch_course_options(session)
+    if not courses:
+        log.error("Geen banen gevonden — ingelogd maar formulier leeg?")
+        return 0, 0, 0
 
-    session = requests.Session()
-    session.headers.update({"User-Agent": UA})
-    log.info("Inloggen op golf.nl voor gebruiker %s…", user_id)
-    golfnl_login(session)
+    processed = saved = failed = 0
 
-    log.info("Scorekaart-formulier ophalen voor baan-ID mapping…")
-    course_options = fetch_course_options(session)
-
-    # Verwerk per unieke tee (meerdere rondes op dezelfde tee → één API-aanroep)
-    seen_tees: set[str] = set()
-    # Cache courseId → course_data om herhaalde API-aanroepen te voorkomen
-    course_cache: dict[int, dict] = {}
-    updated = failed = 0
-
-    for r in missing:
-        tee_id = r["_tee_id"]
-        if tee_id in seen_tees:
-            continue
-
-        club_name = r.get("course", "")
-        tee_name = r.get("_tee_name", "")
-        holes = r.get("holes") or 18
-
-        course_id = find_course_id(course_options, club_name)
-        if not course_id:
-            log.warning("Geen golf.nl baan gevonden voor '%s' — overgeslagen.", club_name)
-            seen_tees.add(tee_id)
-            failed += 1
-            continue
-
+    for idx, (club_name, course_id) in enumerate(courses, 1):
+        log.info("[%d/%d] %s (courseId=%d)…", idx, len(courses), club_name, course_id)
         try:
-            if course_id not in course_cache:
-                course_cache[course_id] = fetch_course_data(session, course_id)
-                time.sleep(0.2)
+            data = fetch_course_data(session, course_id)
+            loops = data.get("Loops") or []
 
-            course_data = course_cache[course_id]
-            loops = course_data.get("Loops") or []
+            for loop in loops:
+                loop_name = loop.get("LoopName", "")
+                holes = loop_holes(loop_name) or 18
+                categories = loop.get("Categories") or []
 
-            # Selecteer lussen die overeenkomen met het juiste aantal holes
-            matching_loops = [l for l in loops if loop_holes(l.get("LoopName", "")) == holes]
-            if not matching_loops:
-                matching_loops = loops  # vangnet: gebruik alle lussen
+                for cat in categories:
+                    cat_idx = cat.get("CategoryIndex", -1)
+                    tee_name, tee_gender = CATEGORY_MAP.get(cat_idx, (None, None))
+                    if not tee_name:
+                        continue  # onbekende categorie
 
-            cr = slope = None
-            for loop in matching_loops:
-                for cat in loop.get("Categories") or []:
-                    cat_tee, _ = CATEGORY_MAP.get(cat.get("CategoryIndex", -1), (None, None))
-                    if cat_tee and cat_tee.lower() == tee_name.lower():
-                        cr = cat.get("CourseRating")
-                        slope = cat.get("SlopeRating")
-                        log.debug(
-                            "Match: baan=%s (%s) lus=%s tee=%s → CR=%s Slope=%s",
-                            club_name, course_id, loop.get("LoopName"), tee_name, cr, slope,
-                        )
-                        break
-                if cr is not None or slope is not None:
-                    break
+                    cr = cat.get("CourseRating")
+                    slope = cat.get("SlopeRating")
+                    if cr is None and slope is None:
+                        continue  # geen data, overslaan
 
-            if cr is not None or slope is not None:
-                update_course_tee(tee_id, cr, slope)
-                updated += 1
-                log.info(
-                    "Tee %s (%s %s): CR=%s Slope=%s opgeslagen.",
-                    tee_id, club_name, tee_name, cr, slope,
-                )
-            else:
-                log.warning(
-                    "Geen CR/slope gevonden voor %s / %s (tee '%s' niet in CategoryMap?).",
-                    club_name, holes, tee_name,
-                )
-                failed += 1
+                    upsert_tee(club_name, loop_name, holes, tee_name, tee_gender, cr, slope)
+                    saved += 1
+                    log.debug(
+                        "  %s / %s / %s (%s) → CR=%s Slope=%s",
+                        club_name, loop_name, tee_name, tee_gender, cr, slope,
+                    )
 
-            seen_tees.add(tee_id)
+            processed += 1
 
         except Exception as e:  # noqa: BLE001
             failed += 1
-            log.warning("Fout bij %s (courseId=%s): %s", club_name, course_id, e)
+            log.warning("Fout bij %s (courseId=%d): %s", club_name, course_id, e)
 
-    log.info(
-        "Gebruiker %s klaar — %d tee(s) bijgewerkt, %d mislukt.",
-        user_id, updated, failed,
-    )
-    return updated, failed
+        time.sleep(REQUEST_DELAY)
+
+    return processed, saved, failed
 
 
 # ---------------------------------------------------------------------------
@@ -289,23 +239,40 @@ def backfill_one_user(username: str, password: str, user_id: str) -> tuple[int, 
 # ---------------------------------------------------------------------------
 
 def print_status() -> None:
-    total = sb_get(
-        "rounds",
-        "?select=id&golfnl_scorecard_id=not.is.null&course_tee_id=not.is.null&deleted_at=is.null",
-    )
-    with_cr = sb_get(
-        "course_tees",
-        "?select=id&course_rating=not.is.null&slope_rating=not.is.null",
-    )
-    without_cr = sb_get(
-        "course_tees",
-        "?select=id&or=(course_rating.is.null,slope_rating.is.null)",
-    )
-    print(f"\n=== CR/slope voortgang ===")
-    print(f"Rondes met scorecard_id + tee: {len(total)}")
-    print(f"Tees met beide CR+slope:        {len(with_cr)}")
-    print(f"Tees zonder (een van) CR/slope: {len(without_cr)}")
+    clubs    = sb_get("clubs",       "?select=id&country=eq.NL")
+    courses  = sb_get("courses",     "?select=id")
+    tees     = sb_get("course_tees", "?select=id")
+    with_cr  = sb_get("course_tees", "?select=id&course_rating=not.is.null&slope_rating=not.is.null")
+    no_cr    = sb_get("course_tees", "?select=id&or=(course_rating.is.null,slope_rating.is.null)")
+
+    print("\n=== CR/slope databasestatus ===")
+    print(f"Clubs (NL):              {len(clubs)}")
+    print(f"Lussen (courses):        {len(courses)}")
+    print(f"Tees totaal:             {len(tees)}")
+    print(f"  met CR + slope:        {len(with_cr)}")
+    print(f"  zonder (een van) both: {len(no_cr)}")
     print()
+
+
+# ---------------------------------------------------------------------------
+# Inloggen — één account volstaat
+# ---------------------------------------------------------------------------
+
+def get_credentials() -> tuple[str, str]:
+    """Haal golf.nl-credentials op (env vars → eerste gebruiker in DB)."""
+    username = os.environ.get("GOLFNL_USERNAME", "")
+    password = os.environ.get("GOLFNL_PASSWORD", "")
+    if username and password:
+        return username, password
+
+    users = sb_get_user_settings()
+    if users:
+        return users[0]["golfnl_username"], users[0]["golfnl_password"]
+
+    raise RuntimeError(
+        "Geen golf.nl-credentials gevonden. Stel GOLFNL_USERNAME + GOLFNL_PASSWORD in "
+        "of sla ze op via de app."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +280,7 @@ def print_status() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    mode = sys.argv[1].lower() if len(sys.argv) > 1 else "backfill"
+    mode = (sys.argv[1].lower() if len(sys.argv) > 1 else "fill-all").replace("_", "-")
 
     require_env("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_ANON_KEY", "")
@@ -325,31 +292,27 @@ def main() -> None:
         print_status()
         return
 
-    users = sb_get_user_settings()
-    if GOLF_USER_ID and users:
-        users = [u for u in users if u["user_id"] == GOLF_USER_ID]
-
-    golfnl_env_user = os.environ.get("GOLFNL_USERNAME", "")
-    golfnl_env_pass = os.environ.get("GOLFNL_PASSWORD", "")
-    if not users and golfnl_env_user and golfnl_env_pass and GOLF_USER_ID:
-        users = [{"user_id": GOLF_USER_ID, "golfnl_username": golfnl_env_user,
-                  "golfnl_password": golfnl_env_pass}]
-
-    if not users:
-        log.error("Geen gebruikers met GOLF.NL-credentials. Stel ze in via de app.")
+    if mode not in ("fill-all", "backfill"):
+        log.error("Onbekende modus '%s'. Kies 'fill-all' of 'status'.", mode)
         sys.exit(2)
 
-    log.info("%d gebruiker(s) te verwerken.", len(users))
-    total_updated = total_failed = 0
-    for u in users:
-        upd, fail = backfill_one_user(
-            u["golfnl_username"], u["golfnl_password"], u["user_id"],
-        )
-        total_updated += upd
-        total_failed += fail
+    username, password = get_credentials()
+    _gn.GOLFNL_USERNAME = username
+    _gn.GOLFNL_PASSWORD = password
 
-    log.info("Klaar — %d tee(s) bijgewerkt, %d mislukt.", total_updated, total_failed)
-    if total_failed > 0 and total_updated == 0:
+    session = requests.Session()
+    session.headers.update({"User-Agent": UA})
+    log.info("Inloggen op golf.nl…")
+    golfnl_login(session)
+
+    log.info("Start vullen van alle banen (CR/slope)…")
+    processed, saved, failed = fill_all(session)
+
+    log.info(
+        "Klaar — %d banen verwerkt, %d tees opgeslagen, %d banen mislukt.",
+        processed, saved, failed,
+    )
+    if failed > 0 and processed == 0:
         sys.exit(1)
 
 
