@@ -348,6 +348,19 @@ export function computeCoachData(rounds, userGoal = {}) {
     doubleBogey:Math.round(_interp(hcp, _DB_C)),
   };
 
+  // Positieve gap = speler zit ONDER de benchmark (verbetering nodig).
+  // Negatieve of nul gap = benchmark al gehaald, geen advies nodig.
+  // Richting is hier ondubbelzinnig bepaald zodat de AI dit niet zelf hoeft af te leiden.
+  const t = trends;
+  const b = benchmarks;
+  const gaps = {
+    gir:         t.gir.recent        !== null ? b.gir         - t.gir.recent        : null, // hoger=beter
+    fairway:     t.fairway.recent    !== null ? b.fairway     - t.fairway.recent    : null, // hoger=beter
+    threePutts:  t.threePutts.recent !== null ? t.threePutts.recent - b.threePutts  : null, // lager=beter
+    penalties:   t.penalties.recent  !== null ? t.penalties.recent  - b.penalties   : null, // lager=beter
+    doubleBogey: t.doubleBogey.recent!== null ? t.doubleBogey.recent- b.doubleBogey : null, // lager=beter
+  };
+
   return {
     qualifying: n,
     hasHoleData: qualifying.filter((r) => holesData(r).length > 0).length,
@@ -358,6 +371,7 @@ export function computeCoachData(rounds, userGoal = {}) {
     targetLevel,
     trends,
     benchmarks,
+    gaps,
   };
 }
 

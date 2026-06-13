@@ -9,7 +9,7 @@ import {
   saveRoundInsights, patchRoundStats, getLoopsForRound, updateRoundLoop, saveGoal,
   callCoachAdvice,
 } from "./db.js?v=33";
-import { computeStats, computeWeakspots, computeCoachData, hcpLevel } from "./stats.js?v=16";
+import { computeStats, computeWeakspots, computeCoachData, hcpLevel } from "./stats.js?v=17";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=12";
 
 const MONTHS = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
