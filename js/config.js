@@ -20,4 +20,4 @@ const _devMode = _onLocalhost && typeof localStorage !== "undefined" && localSto
 export const SUPABASE_URL      = _devMode ? "http://localhost:3001"                         : "https://ptrccpfqnvygrqmsykob.supabase.co";
 export const SUPABASE_ANON_KEY = _devMode ? "dev-anon-key"                                 : "sb_publishable_mY2XiMffONLDlVLDOnkTqw_vEgP9Iwd";
 
-export const GITHUB_REPO = "mathijsfra/golf-tracker";
+export const GITHUB_REPO = "mathijsfra/road-to-scratch";

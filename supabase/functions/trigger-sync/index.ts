@@ -11,7 +11,7 @@
 // -------------------------------------------------------------------
 
 const GH_PAT = Deno.env.get("GH_PAT") ?? "";
-const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "mathijsfra/golf-tracker";
+const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "mathijsfra/road-to-scratch";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
