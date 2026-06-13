@@ -7,7 +7,7 @@ import {
   resetGarminAuthStatus, clearGarminCredentials, clearGolfnlCredentials,
   getClubBag, getToptracerStatus, saveToptracerCredentials, clearToptracerCredentials,
   saveRoundInsights, patchRoundStats,
-} from "./db.js?v=27";
+} from "./db.js?v=28";
 import { computeStats } from "./stats.js?v=12";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=11";
 
@@ -377,8 +377,8 @@ function roundCard(r, withActions) {
       ${garmin ? `<div class="garmin-grid">
         ${gcell(r.putts, "Putts")}
         ${gcell(r.penalties, "Penalties")}
-        ${gcell(r.bunkers, "Bunkers")}
-        ${gcell(r.bunker_saves, "Saves")}
+        ${gcell(r.gir != null ? Math.round(r.gir / (r.holes || 18) * 100) + "%" : null, "GIR%")}
+        ${gcell(r.fairways_hit != null && r.fairways_total ? Math.round(r.fairways_hit / r.fairways_total * 100) + "%" : null, "FW%")}
       </div>` : ""}
       ${hd.length ? (withActions ? holesEditGrid(r) : holesTable(hd)) : ""}
       ${shots.length ? `<div class="shot-thumbs">${shots.map((u) => `<a class="shot-link" data-shot="${esc(u)}" target="_blank" rel="noopener"><img alt="screenshot" loading="lazy"></a>`).join("")}</div>` : ""}
@@ -492,9 +492,9 @@ function gcell(v, label) {
   return `<div class="g"><div class="gv">${v != null ? v : "—"}</div><div class="gl">${label}</div></div>`;
 }
 function hasGarmin(r) {
-  if ([r.putts, r.penalties, r.bunkers, r.bunker_saves].some((v) => v != null)) return true;
+  if ([r.putts, r.penalties, r.gir, r.fairways_hit].some((v) => v != null)) return true;
   const hd = Array.isArray(r.holes_data) ? r.holes_data : [];
-  return hd.some((h) => h.putts != null || h.penalties != null || h.fairway != null);
+  return hd.some((h) => h.putts != null || h.penalties != null || h.fairway != null || h.gir != null);
 }
 
 function bindRoundCards(scope) {

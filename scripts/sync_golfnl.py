@@ -201,6 +201,12 @@ def to_float(v):
     return float(m.group().replace(",", ".")) if m else None
 
 
+def parse_extra_strokes(cell_text: str):
+    """Extract '+N' handicap strokes from a par cell like '4+2' → 2, '3' → None."""
+    m = re.search(r'\+(\d+)', str(cell_text))
+    return int(m.group(1)) if m else None
+
+
 def first_float(v):
     """Eerste kommagetal uit een tekst (bv. '34.2 4.0' -> 34.2)."""
     return to_float(v)
@@ -230,10 +236,12 @@ def parse_scorecard_html(html: str) -> dict:
         # Score heeft geen class — het is de 3e <td> (index 2).
         score_cell = tds[2] if len(tds) >= 3 else None
         stb_cell = tr.select_one(".c-scorecard__scores__stableford")
+        par_text = par_cell.get_text() if par_cell else ""
         holes_data.append({
             "hole": hole,
             # to_int() pakt het eerste getal en negeert de <sup>-slagindex vanzelf.
-            "par": to_int(par_cell.get_text()) if par_cell else None,
+            "par": to_int(par_text),
+            "extra_strokes": parse_extra_strokes(par_text),
             "score": to_int(score_cell.get_text()) if score_cell else None,
             "stb": to_int(stb_cell.get_text()) if stb_cell else None,
             "fairway": None, "gir": None, "putts": None, "penalties": None,
