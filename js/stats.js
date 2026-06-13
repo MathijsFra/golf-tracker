@@ -228,21 +228,30 @@ function computeGarmin(rounds) {
 }
 
 // Zwaktepunt-analyse: welke onderdelen kosten de meeste slagen?
-// Vergelijkt actuele stats met amateurs-doelwaarden; geeft items gesorteerd op slechtste eerst.
+// Doelwaarden zijn geschaald op het huidige handicap zodat een hcp-34-speler
+// andere verwachtingen krijgt dan een scratch-golfer.
 export function computeWeakspots(stats) {
   const items = [];
   const p = stats.play;
+  const hcp = stats.currentHcp ?? 18; // standaard midden-amateur als hcp onbekend
+
+  // Targets schalen lineair mee met handicap (afgeleid van USGA/EGA-benchmarks).
+  const girTarget    = Math.max(5,  Math.round(60 - hcp * 1.5));   // hcp0=60%, hcp18=33%, hcp36=6%
+  const fwTarget     = Math.max(30, Math.round(70 - hcp * 1.0));   // hcp0=70%, hcp18=52%, hcp36=34%
+  const tpTarget     = Math.round((0.5 + hcp * 0.1) * 10) / 10;   // hcp0=0.5, hcp18=2.3, hcp36=4.1
+  const penTarget    = Math.round((0.5 + hcp * 0.05) * 10) / 10;  // hcp0=0.5, hcp18=1.4, hcp36=2.3
+  const dbTarget     = Math.round(3 + hcp * 1.5);                  // hcp0=3%, hcp18=30%, hcp36=57%
 
   if (p.girPct != null)
-    items.push({ area: "GIR", value: `${p.girPct}%`, bench: "doel: 25%+", score: Math.max(0, 25 - p.girPct) });
+    items.push({ area: "GIR", value: `${p.girPct}%`, bench: `doel: ${girTarget}%+`, score: Math.max(0, girTarget - p.girPct) });
   if (p.fairwayPct != null)
-    items.push({ area: "Fairways", value: `${p.fairwayPct}%`, bench: "doel: 50%+", score: Math.max(0, 50 - p.fairwayPct) });
+    items.push({ area: "Fairways", value: `${p.fairwayPct}%`, bench: `doel: ${fwTarget}%+`, score: Math.max(0, fwTarget - p.fairwayPct) });
   if (p.threePutts != null)
-    items.push({ area: "3-putts", value: `${p.threePutts.toFixed(1)}/18h`, bench: "doel: <1.5", score: Math.max(0, (p.threePutts - 1.5) * 20) });
+    items.push({ area: "3-putts", value: `${p.threePutts.toFixed(1)}/18h`, bench: `doel: <${tpTarget}`, score: Math.max(0, (p.threePutts - tpTarget) * 20) });
   if (p.penalties != null)
-    items.push({ area: "Penalties", value: `${p.penalties.toFixed(1)}/18h`, bench: "doel: <1.5", score: Math.max(0, (p.penalties - 1.5) * 20) });
+    items.push({ area: "Penalties", value: `${p.penalties.toFixed(1)}/18h`, bench: `doel: <${penTarget}`, score: Math.max(0, (p.penalties - penTarget) * 20) });
   if (p.doubleBogeyRate != null)
-    items.push({ area: "Double bogeys", value: `${p.doubleBogeyRate}%`, bench: "doel: <25%", score: Math.max(0, p.doubleBogeyRate - 25) });
+    items.push({ area: "Double bogeys", value: `${p.doubleBogeyRate}%`, bench: `doel: <${dbTarget}%`, score: Math.max(0, p.doubleBogeyRate - dbTarget) });
 
   items.sort((a, b) => b.score - a.score);
   return items;
