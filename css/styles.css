@@ -1,18 +1,25 @@
 :root {
-  --green-900: #052e16;
-  --green-800: #14532d;
-  --green-700: #166534;
-  --green-600: #16a34a;
-  --green-500: #22c55e;
-  --green-100: #dcfce7;
+  /* Brand colors */
+  --brand-black: #141414;
+  --brand-dark-green: #1B5C2A;
+  --brand-lime: #4DC52A;
+  --brand-gold: #C9A227;
+
+  /* UI scale */
+  --green-900: #0A1A10;
+  --green-800: #1B5C2A;
+  --green-700: #236B33;
+  --green-600: #4DC52A;
+  --green-500: #6BDA48;
+  --green-100: #E4F7DA;
   --ink: #0f1b12;
   --muted: #6b7c70;
   --line: #e4ebe5;
   --bg: #f3f6f3;
   --card: #ffffff;
   --danger: #dc2626;
-  --gold: #d97706;
-  --shadow: 0 1px 3px rgba(5, 46, 22, 0.08), 0 6px 16px rgba(5, 46, 22, 0.06);
+  --gold: #C9A227;
+  --shadow: 0 1px 4px rgba(0,0,0,0.07), 0 6px 18px rgba(0,0,0,0.08);
   --radius: 16px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -36,19 +43,29 @@ html, body {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: linear-gradient(135deg, var(--green-800), var(--green-600));
+  background: var(--brand-black);
   color: #fff;
   padding-top: var(--safe-top);
-  box-shadow: var(--shadow);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06), 0 4px 16px rgba(0,0,0,0.4);
 }
 .header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 13px 16px;
 }
-.app-title { font-size: 1.1rem; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
-.app-title em { font-style: italic; font-weight: 800; opacity: 0.9; }
+.app-title {
+  font-size: 1.05rem;
+  margin: 0;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.app-title .title-road { color: rgba(255,255,255,0.85); font-style: normal; font-weight: 600; }
+.app-title .title-to   { color: rgba(255,255,255,0.55); font-size: 0.85em; font-weight: 500; }
+.app-title .title-scratch { color: var(--brand-lime); font-style: italic; }
 .header-right { display: flex; align-items: center; gap: 10px; }
 .logout-btn {
   font-size: 0.72rem;
@@ -67,7 +84,7 @@ html, body {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: linear-gradient(135deg, var(--green-800), var(--green-900));
+  background: linear-gradient(160deg, #1A1A1A 0%, #0D1A10 100%);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -86,8 +103,8 @@ html, body {
   gap: 4px;
 }
 .login-logo { font-size: 2.6rem; text-align: center; }
-.login-card h2 { margin: 2px 0 0; text-align: center; color: var(--green-800); font-size: 1.4rem; }
-.login-card h2 em { font-style: italic; font-weight: 800; color: var(--green-600); }
+.login-card h2 { margin: 2px 0 0; text-align: center; color: var(--ink); font-size: 1.4rem; font-weight: 700; }
+.login-card h2 em { font-style: italic; font-weight: 800; color: var(--brand-lime); }
 .login-sub { margin: 0 0 12px; text-align: center; color: var(--muted); font-size: 0.88rem; }
 .login-card label { display: flex; flex-direction: column; gap: 5px; font-size: 0.82rem; color: var(--muted); font-weight: 600; margin-top: 10px; }
 .login-card .btn-primary { margin-top: 16px; }
@@ -116,25 +133,34 @@ html, body {
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 .section-title {
-  font-size: 0.95rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  color: var(--green-800);
+  color: var(--muted);
   margin: 22px 2px 10px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.07em;
 }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .toolbar .section-title { margin-bottom: 4px; }
 
 /* ---------- Hero card ---------- */
 .hero-card {
-  background: linear-gradient(135deg, var(--green-700), var(--green-900));
+  background: linear-gradient(140deg, #1C1C1C 0%, #0D0D0D 100%);
   color: #fff;
   border-radius: var(--radius);
-  padding: 22px 20px;
-  box-shadow: var(--shadow);
+  padding: 22px 20px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 12px 32px rgba(0,0,0,0.25);
+  border: 1px solid rgba(201,162,39,0.18);
   position: relative;
   overflow: hidden;
+}
+.hero-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--brand-gold), var(--brand-lime));
+  opacity: 0.9;
 }
 .hero-card::after {
   content: "⛳";
@@ -142,12 +168,12 @@ html, body {
   right: 14px;
   bottom: -10px;
   font-size: 5rem;
-  opacity: 0.12;
+  opacity: 0.07;
 }
-.hero-label { font-size: 0.8rem; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.06em; }
-.hero-value { font-size: 3.2rem; font-weight: 800; line-height: 1; margin: 6px 0; letter-spacing: -0.02em; }
-.hero-sub { font-size: 0.9rem; opacity: 0.9; }
-.hero-sub .up { color: #bbf7d0; font-weight: 700; }
+.hero-label { font-size: 0.75rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.hero-value { font-size: 3.4rem; font-weight: 800; line-height: 1; margin: 6px 0 4px; letter-spacing: -0.03em; }
+.hero-sub { font-size: 0.88rem; opacity: 0.8; }
+.hero-sub .up { color: var(--brand-lime); font-weight: 700; opacity: 1; }
 
 /* ---------- Stat grid ---------- */
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -158,7 +184,7 @@ html, body {
   box-shadow: var(--shadow);
 }
 .stat-card .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-.stat-card .value { font-size: 1.7rem; font-weight: 800; color: var(--green-800); line-height: 1.1; margin-top: 2px; }
+.stat-card .value { font-size: 1.7rem; font-weight: 800; color: var(--ink); line-height: 1.1; margin-top: 2px; }
 .stat-card .meta { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
 .stat-card.span-2 { grid-column: 1 / -1; }
 
@@ -182,8 +208,8 @@ html, body {
   flex-direction: column;
   align-items: center;
   min-width: 46px;
-  background: var(--green-100);
-  color: var(--green-800);
+  background: #1B1B1B;
+  color: #fff;
   border-radius: 10px;
   padding: 5px 0;
   font-weight: 700;
@@ -194,7 +220,7 @@ html, body {
 .round-course { font-weight: 700; font-size: 1rem; display: flex; align-items: center; gap: 6px; }
 .round-tags { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
 .round-metrics { text-align: right; display: flex; flex-direction: column; gap: 2px; }
-.round-stb { font-weight: 800; font-size: 1.15rem; color: var(--green-700); }
+.round-stb { font-weight: 800; font-size: 1.15rem; color: var(--brand-lime); }
 .round-hcp { font-size: 0.78rem; color: var(--muted); }
 .badge-exs {
   font-size: 0.62rem;
@@ -269,13 +295,13 @@ html, body {
 
 /* ---------- Niveau-badge ---------- */
 .level-badge {
-  display: flex; flex-direction: column; gap: 4px;
-  background: var(--card); border-radius: 12px;
-  padding: 10px 14px; margin-bottom: 12px;
-  border-left: 3px solid var(--green-600);
+  display: flex; flex-direction: row; align-items: center; gap: 10px;
+  background: #111; border-radius: 12px;
+  padding: 11px 14px; margin-bottom: 12px;
+  border-left: 3px solid var(--brand-lime);
 }
-.level-current { font-size: 0.9rem; font-weight: 700; color: var(--ink); }
-.level-target { font-size: 0.8rem; color: var(--muted); }
+.level-current { font-size: 0.88rem; font-weight: 700; color: #fff; flex: 1; }
+.level-target { font-size: 0.78rem; color: rgba(255,255,255,0.5); }
 
 /* ---------- Settings inputs ---------- */
 .settings-input {
@@ -298,7 +324,7 @@ html, body {
   color: var(--muted); cursor: pointer; transition: background 0.15s, color 0.15s;
   line-height: 1.4;
 }
-.toggle-btn.active { background: var(--green-600); color: #fff; }
+.toggle-btn.active { background: var(--brand-black); color: #fff; }
 .bag-group-label {
   font-size: 0.72rem;
   font-weight: 700;
@@ -463,18 +489,18 @@ textarea { resize: vertical; }
   bottom: 0; left: 0; right: 0;
   z-index: 30;
   display: flex;
-  background: rgba(255,255,255,0.92);
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
-  border-top: 1px solid var(--line);
+  background: rgba(18, 18, 18, 0.97);
+  backdrop-filter: saturate(120%) blur(16px);
+  -webkit-backdrop-filter: saturate(120%) blur(16px);
+  border-top: 1px solid rgba(255,255,255,0.07);
   padding-bottom: var(--safe-bottom);
 }
 .tab {
   flex: 1;
   border: none;
   background: none;
-  color: var(--muted);
-  font-size: 0.66rem;
+  color: rgba(255,255,255,0.38);
+  font-size: 0.64rem;
   font-weight: 600;
   font-family: inherit;
   padding: 9px 0 7px;
@@ -483,21 +509,22 @@ textarea { resize: vertical; }
   align-items: center;
   gap: 3px;
   cursor: pointer;
+  transition: color 0.15s;
 }
 .tab .ico { font-size: 1.25rem; line-height: 1; }
-.tab.active { color: var(--green-700); }
+.tab.active { color: var(--brand-lime); }
 .tab-add .ico {
-  background: var(--green-600);
-  color: #fff;
+  background: var(--brand-lime);
+  color: #0D0D0D;
   width: 34px; height: 34px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   font-size: 1.4rem;
   margin-top: -2px;
-  box-shadow: 0 4px 10px rgba(22,163,74,0.4);
+  box-shadow: 0 4px 12px rgba(77,197,42,0.45);
 }
-.tab-add.active .ico { background: var(--green-700); }
+.tab-add.active .ico { background: var(--brand-lime); filter: brightness(0.9); }
 
 @media (min-width: 560px) {
   .garmin-grid { grid-template-columns: repeat(4, 1fr); }
@@ -682,16 +709,16 @@ details.adv[open] > summary::after { transform: rotate(180deg); }
 :root[data-theme="dark"] {
   --ink: #e2f0e4;
   --muted: #7a9b7c;
-  --line: #253d28;
-  --bg: #0d1a0f;
-  --card: #142018;
-  --green-100: #1c3522;
-  --green-800: #86efac;
-  --shadow: 0 1px 3px rgba(0,0,0,0.45), 0 6px 16px rgba(0,0,0,0.3);
+  --line: #222;
+  --bg: #0d0d0d;
+  --card: #141414;
+  --green-100: #1a2e1c;
+  --green-800: #6BDA48;
+  --shadow: 0 1px 3px rgba(0,0,0,0.5), 0 6px 16px rgba(0,0,0,0.35);
 }
 :root[data-theme="dark"] .tabbar {
-  background: rgba(20,32,24,0.95);
-  border-top-color: var(--line);
+  background: rgba(10,10,10,0.98);
+  border-top-color: rgba(255,255,255,0.06);
 }
 :root[data-theme="dark"] input,
 :root[data-theme="dark"] select,
