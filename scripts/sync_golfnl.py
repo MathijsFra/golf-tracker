@@ -469,13 +469,22 @@ def push_to_supabase(new_rounds: list[dict], user_id: str) -> int:
         if rd.get("_course_tee_id"):
             row["course_tee_id"] = rd["_course_tee_id"]
         try:
-            request_with_retry(
+            resp = request_with_retry(
                 "POST", f"{SUPABASE_URL}/rest/v1/rounds",
-                headers={**supabase_headers(), "Prefer": "return=minimal"},
+                headers={**supabase_headers(), "Prefer": "return=representation"},
                 data=json.dumps(row), timeout=30,
             )
             added += 1
             log.debug("Ronde %s (%s, %dh) toegevoegd.", rd.get("date"), rd.get("course"), rd.get("holes", 0))
+            # Probeer de nieuwe ronde te koppelen aan een benoemde lus.
+            try:
+                inserted = resp.json()
+                if inserted and isinstance(inserted, list) and inserted[0].get("id"):
+                    new_round_id = inserted[0]["id"]
+                    if rd.get("_course_tee_id"):
+                        try_automatch_loop(new_round_id, rd["_course_tee_id"])
+            except Exception as e_match:  # noqa: BLE001
+                log.debug("Auto-match lus voor nieuwe ronde overgeslagen: %s", e_match)
         except Exception as e:  # noqa: BLE001
             failed += 1
             body = getattr(getattr(e, "response", None), "text", "")
@@ -540,6 +549,111 @@ def update_round_in_supabase(sb_id: str, fields: dict) -> None:
         data=json.dumps(fields),
         timeout=30,
     )
+
+
+def try_automatch_loop(round_id: str, current_course_tee_id: str) -> None:
+    """
+    Probeert een ronde te koppelen aan een benoemde lus (loop_name != '') als de
+    huidige course_tees-rij aan een anonieme lus (loop_name='') hangt.
+
+    Werkwijze:
+      1. Huidige tee ophalen → course ophalen → club_id + loop_name controleren.
+      2. Als loop_name al ingevuld is: niets doen.
+      3. Courses zoeken voor dezelfde club met loop_name != ''.
+      4. Bijpassende tees zoeken op holes + tee_name + tee_gender.
+      5. Precies één match → round.course_tee_id bijwerken.
+         Nul of meerdere → niets doen.
+    """
+    try:
+        # 1. Huidige tee ophalen
+        resp_tee = request_with_retry(
+            "GET",
+            f"{SUPABASE_URL}/rest/v1/course_tees"
+            f"?id=eq.{current_course_tee_id}&select=id,course_id,tee_name,tee_gender,holes",
+            headers=supabase_headers(),
+            timeout=15,
+        )
+        tees = resp_tee.json()
+        if not tees or not isinstance(tees, list):
+            return
+        tee = tees[0]
+        course_id = tee.get("course_id")
+        tee_name = tee.get("tee_name")
+        tee_gender = tee.get("tee_gender")
+        holes = tee.get("holes")
+
+        # 2. Huidige course ophalen → loop_name + club_id controleren
+        resp_course = request_with_retry(
+            "GET",
+            f"{SUPABASE_URL}/rest/v1/courses"
+            f"?id=eq.{course_id}&select=id,club_id,loop_name",
+            headers=supabase_headers(),
+            timeout=15,
+        )
+        courses = resp_course.json()
+        if not courses or not isinstance(courses, list):
+            return
+        current_course = courses[0]
+        if current_course.get("loop_name"):
+            # Al een benoemde lus — niets te doen
+            return
+        club_id = current_course.get("club_id")
+        if not club_id:
+            return
+
+        # 3. Benoemde courses zoeken voor dezelfde club
+        resp_named = request_with_retry(
+            "GET",
+            f"{SUPABASE_URL}/rest/v1/courses"
+            f"?club_id=eq.{club_id}&loop_name=neq.&select=id",
+            headers=supabase_headers(),
+            timeout=15,
+        )
+        named_courses = resp_named.json()
+        if not named_courses or not isinstance(named_courses, list):
+            return
+        named_course_ids = [c["id"] for c in named_courses]
+
+        # 4. Tees zoeken die matchen op holes + tee_name + tee_gender
+        course_ids_filter = ",".join(named_course_ids)
+        params = (
+            f"?course_id=in.({course_ids_filter})"
+            f"&holes=eq.{holes}"
+            f"&tee_name=eq.{tee_name}"
+            f"&tee_gender=eq.{tee_gender}"
+            f"&select=id"
+        )
+        resp_match = request_with_retry(
+            "GET",
+            f"{SUPABASE_URL}/rest/v1/course_tees{params}",
+            headers=supabase_headers(),
+            timeout=15,
+        )
+        matches = resp_match.json()
+        if not matches or not isinstance(matches, list):
+            return
+
+        if len(matches) == 1:
+            new_tee_id = matches[0]["id"]
+            request_with_retry(
+                "PATCH",
+                f"{SUPABASE_URL}/rest/v1/rounds?id=eq.{round_id}",
+                headers={**supabase_headers(), "Prefer": "return=minimal"},
+                data=json.dumps({"course_tee_id": new_tee_id}),
+                timeout=15,
+            )
+            log.debug(
+                "Auto-match lus: ronde %s → course_tee_id bijgewerkt van %s naar %s.",
+                round_id, current_course_tee_id, new_tee_id,
+            )
+        elif len(matches) > 1:
+            log.info(
+                "Auto-match lus: %d kandidaten voor ronde %s (tee=%s, holes=%s) — overgeslagen.",
+                len(matches), round_id, tee_name, holes,
+            )
+
+    except Exception as e:  # noqa: BLE001
+        log.debug("Auto-match lus mislukt voor ronde %s (niet kritiek): %s", round_id, e)
 
 
 def sync_one_user(username: str, password: str, user_id: str) -> int:
@@ -674,6 +788,10 @@ def sync_one_user(username: str, password: str, user_id: str) -> int:
             update_round_in_supabase(sb_id, fields)
             updated += 1
             log.debug("Ronde %s bijgewerkt (id=%s, velden=%s).", rd.get("date"), sb_id, list(fields))
+            # Probeer de ronde te koppelen aan een benoemde lus als die nu beschikbaar is.
+            effective_tee_id = rd.get("_course_tee_id") or sb_round.get("course_tee_id")
+            if effective_tee_id:
+                try_automatch_loop(sb_id, effective_tee_id)
         except Exception as e:  # noqa: BLE001
             update_failed += 1
             log.warning("Update mislukt voor ronde %s: %s", rd.get("date"), e)
