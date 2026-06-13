@@ -1100,13 +1100,55 @@ function startGarminPoll() {
 }
 
 // ---------- coach ----------
-let _coachResult = null;
+const COACH_CACHE_KEY = "coach_advice_v1";
+
+function saveCoachCache(advice) {
+  try {
+    localStorage.setItem(COACH_CACHE_KEY, JSON.stringify({
+      advice,
+      generatedAt: Date.now(),
+      roundCount: rounds.length,
+    }));
+  } catch { /* quota full — ignore */ }
+}
+
+function loadCoachCache() {
+  try {
+    const raw = localStorage.getItem(COACH_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function isCoachStale(cached) {
+  return rounds.length > (cached?.roundCount ?? 0);
+}
+
+function showCoachView() {
+  const cached = loadCoachCache();
+  if (!cached) return; // geen cache → intro blijft zichtbaar
+
+  renderCoachResult(cached.advice);
+  $("#coachIntro").hidden  = true;
+  $("#coachLoading").hidden = true;
+  $("#coachResult").hidden  = false;
+
+  const staleBanner = $("#coachStaleBanner");
+  if (isCoachStale(cached)) {
+    const newRounds = rounds.length - cached.roundCount;
+    staleBanner.querySelector(".stale-text").textContent =
+      `Je hebt ${newRounds} nieuwe ronde${newRounds > 1 ? "s" : ""} gespeeld sinds dit advies.`;
+    staleBanner.hidden = false;
+  } else {
+    staleBanner.hidden = true;
+  }
+}
 
 async function runCoachAnalysis() {
   const intro   = $("#coachIntro");
   const loading = $("#coachLoading");
   const result  = $("#coachResult");
   const hint    = $("#coachModeHint");
+  const stale   = $("#coachStaleBanner");
 
   if (getMode() !== "supabase") {
     hint.hidden = false;
@@ -1115,20 +1157,29 @@ async function runCoachAnalysis() {
 
   intro.hidden   = true;
   result.hidden  = true;
+  stale.hidden   = true;
   loading.hidden = false;
 
   try {
     const coachData = computeCoachData(rounds, userGoal);
     const advice    = await callCoachAdvice(coachData);
-    _coachResult    = advice;
+    saveCoachCache(advice);
     renderCoachResult(advice);
     loading.hidden = true;
     result.hidden  = false;
   } catch (err) {
     loading.hidden = true;
-    intro.hidden   = false;
+    // herstel vorige staat: toon cached als die er is, anders intro
+    const cached = loadCoachCache();
+    if (cached) {
+      result.hidden = false;
+      stale.hidden  = true;
+    } else {
+      intro.hidden = false;
+    }
     hint.textContent = "Analyse mislukt: " + (err.message || err);
     hint.hidden = false;
+    setTimeout(() => { hint.textContent = ""; hint.hidden = true; }, 6000);
   }
 }
 
@@ -1188,10 +1239,12 @@ async function main() {
   $("#filterHoles").addEventListener("change", renderRoundList);
   $("#bagGoSettings")?.addEventListener("click", () => switchView("settings"));
   $("#coachAnalyseBtn")?.addEventListener("click", runCoachAnalysis);
-  $("#coachRefreshBtn")?.addEventListener("click", () => {
-    $("#coachResult").hidden = true;
-    $("#coachIntro").hidden = false;
-    _coachResult = null;
+  $("#coachStaleRefreshBtn")?.addEventListener("click", runCoachAnalysis);
+  $("#coachRefreshBtn")?.addEventListener("click", runCoachAnalysis);
+  $$(".tab").forEach((t) => {
+    if (t.dataset.view === "coach") {
+      t.addEventListener("click", showCoachView);
+    }
   });
   initBagToggles();
   $("#f_shots").addEventListener("change", onShotsSelected);

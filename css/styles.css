@@ -922,6 +922,31 @@ details.adv[open] > summary::after { transform: rotate(180deg); }
 
 .coach-refresh-btn { margin-top: 4px; margin-bottom: 16px; }
 
+.coach-stale-banner {
+  background: rgba(201,162,39,0.12);
+  border: 1px solid rgba(201,162,39,0.35);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.stale-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.stale-text {
+  flex: 1;
+  font-size: 0.84rem;
+  color: var(--brand-gold);
+  font-weight: 600;
+}
+.stale-btn {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  padding: 8px 14px;
+  border-radius: 10px;
+}
+
 .btn-secondary {
   background: transparent;
   color: var(--muted);

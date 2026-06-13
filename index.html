@@ -419,6 +419,12 @@
       </div>
 
       <div id="coachResult" hidden>
+        <div id="coachStaleBanner" class="coach-stale-banner" hidden>
+          <div class="stale-inner">
+            <span class="stale-text"></span>
+            <button id="coachStaleRefreshBtn" class="btn btn-primary stale-btn">Nieuw advies</button>
+          </div>
+        </div>
         <div class="coach-summary-card" id="coachSummaryCard"></div>
         <div id="coachAdviezen"></div>
         <div class="coach-goal-card" id="coachGoalCard" hidden></div>
@@ -437,6 +443,6 @@
     <button class="tab" data-view="settings"><span class="ico">⚙️</span>Instellingen</button>
   </nav>
 
-  <script type="module" src="js/app.js?v=35"></script>
+  <script type="module" src="js/app.js?v=36"></script>
 </body>
 </html>
