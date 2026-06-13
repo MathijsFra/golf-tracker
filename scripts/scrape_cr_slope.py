@@ -128,8 +128,8 @@ def fetch_course_data(session: requests.Session, course_id: int) -> dict:
 
 
 def loop_holes(loop_name: str) -> int | None:
-    """Parseer het aantal holes uit de loop-naam ('18 holes Aak-Botter' → 18)."""
-    m = re.match(r"(\d+)\s*holes?", loop_name or "", re.IGNORECASE)
+    """Parseer het aantal holes uit de loop-naam als fallback ('Jol 9 holes ...' → 9)."""
+    m = re.search(r"(\d+)\s*holes?", loop_name or "", re.IGNORECASE)
     return int(m.group(1)) if m else None
 
 
@@ -161,8 +161,9 @@ def upsert_tee(
     tee_gender: str,
     course_rating: float | None,
     slope_rating: int | None,
+    par: int | None,
 ) -> None:
-    """Upsert één tee met CR/slope (club en lus zijn al gecached)."""
+    """Upsert één tee met CR/slope/par (club en lus zijn al gecached)."""
     tee_row: dict = {
         "course_id":  course_id,
         "tee_name":   tee_name,
@@ -173,6 +174,8 @@ def upsert_tee(
         tee_row["course_rating"] = course_rating
     if slope_rating is not None:
         tee_row["slope_rating"] = slope_rating
+    if par is not None:
+        tee_row["par"] = par
     sb_post("course_tees?on_conflict=course_id,tee_name,tee_gender,holes", tee_row)
 
 
@@ -208,7 +211,6 @@ def fill_all(session: requests.Session) -> tuple[int, int, int]:
 
             for loop in loops:
                 loop_name = loop.get("Name", "")
-                holes = loop_holes(loop_name) or 18
                 categories = loop.get("Categories") or []
 
                 # Lus één keer opslaan per (club, loop_name)
@@ -228,7 +230,13 @@ def fill_all(session: requests.Session) -> tuple[int, int, int]:
                     if cr is None and slope is None:
                         continue  # geen data, overslaan
 
-                    upsert_tee(db_course_id, holes, tee_name, tee_gender, cr, slope)
+                    # Holes-telling en par direct uit de Holes-array (betrouwbaarder
+                    # dan naam-parsing, die faalt bij "Jol 9 holes ..." etc.)
+                    hole_list = cat.get("Holes") or []
+                    holes = len(hole_list) if hole_list else (loop_holes(loop_name) or 18)
+                    par = sum(h.get("Par", 0) for h in hole_list) or None
+
+                    upsert_tee(db_course_id, holes, tee_name, tee_gender, cr, slope, par)
                     saved += 1
                     log.debug(
                         "  %s / %s / %s (%s) → CR=%s Slope=%s",
