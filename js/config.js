@@ -13,9 +13,11 @@
 //  (zie supabase/schema.sql).
 // ============================================================
 
-const _devMode = typeof localStorage !== "undefined" && localStorage.getItem("DEV_MODE") === "true";
+// DEV_MODE werkt uitsluitend op localhost — productiegebruikers kunnen dit niet activeren.
+const _onLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
+const _devMode = _onLocalhost && typeof localStorage !== "undefined" && localStorage.getItem("DEV_MODE") === "true";
 
-export const SUPABASE_URL     = _devMode ? "http://localhost:3001" : "https://ptrccpfqnvygrqmsykob.supabase.co";
-export const SUPABASE_ANON_KEY = _devMode ? "dev-anon-key"        : "sb_publishable_mY2XiMffONLDlVLDOnkTqw_vEgP9Iwd";
+export const SUPABASE_URL      = _devMode ? "http://localhost:3001"                          : "https://ptrccpfqnvygrqmsykob.supabase.co";
+export const SUPABASE_ANON_KEY = _devMode ? "dev-anon-key"                                  : "sb_publishable_mY2XiMffONLDlVLDOnkTqw_vEgP9Iwd";
 
 export const GITHUB_REPO = "mathijsfra/golf-tracker";
