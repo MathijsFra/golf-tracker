@@ -137,32 +137,32 @@ def loop_holes(loop_name: str) -> int | None:
 # Database upsert
 # ---------------------------------------------------------------------------
 
+def upsert_club(club_name: str) -> str:
+    rows = sb_post(
+        "clubs?on_conflict=name,country",
+        {"name": club_name, "country": "NL", "updated_at": "now()"},
+    )
+    return rows[0]["id"]
+
+
+def upsert_course(club_id: str, club_name: str, loop_name: str) -> str:
+    rows = sb_post(
+        "courses?on_conflict=club_id,loop_name",
+        {"club_id": club_id, "loop_name": loop_name, "name": club_name,
+         "country": "NL", "updated_at": "now()"},
+    )
+    return rows[0]["id"]
+
+
 def upsert_tee(
-    club_name: str,
-    loop_name: str,
+    course_id: str,
     holes: int,
     tee_name: str,
     tee_gender: str,
     course_rating: float | None,
     slope_rating: int | None,
-) -> bool:
-    """Upsert club → lus → tee met CR/slope. Geeft True als succesvol."""
-    # 1. Club
-    club_rows = sb_post(
-        "clubs?on_conflict=name,country",
-        {"name": club_name, "country": "NL", "updated_at": "now()"},
-    )
-    club_id = club_rows[0]["id"]
-
-    # 2. Lus (course)
-    course_rows = sb_post(
-        "courses?on_conflict=club_id,loop_name",
-        {"club_id": club_id, "loop_name": loop_name, "name": club_name,
-         "country": "NL", "updated_at": "now()"},
-    )
-    course_id = course_rows[0]["id"]
-
-    # 3. Tee
+) -> None:
+    """Upsert één tee met CR/slope (club en lus zijn al gecached)."""
     tee_row: dict = {
         "course_id":  course_id,
         "tee_name":   tee_name,
@@ -173,9 +173,7 @@ def upsert_tee(
         tee_row["course_rating"] = course_rating
     if slope_rating is not None:
         tee_row["slope_rating"] = slope_rating
-
     sb_post("course_tees?on_conflict=course_id,tee_name,tee_gender,holes", tee_row)
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +183,8 @@ def upsert_tee(
 def fill_all(session: requests.Session) -> tuple[int, int, int]:
     """
     Verwerk alle banen en sla CR/slope op voor elke lus + tee.
-    Geeft (verwerkte banen, opgeslagen tees, mislukte banen) terug.
+    Club en lus worden per baan één keer gecached om onnodige Supabase-calls
+    te vermijden. Geeft (verwerkte banen, opgeslagen tees, mislukte banen) terug.
     """
     courses = fetch_course_options(session)
     if not courses:
@@ -193,6 +192,8 @@ def fill_all(session: requests.Session) -> tuple[int, int, int]:
         return 0, 0, 0
 
     processed = saved = failed = 0
+    club_cache: dict[str, str] = {}      # club_name → club_id
+    course_cache: dict[tuple, str] = {}  # (club_id, loop_name) → course_id
 
     for idx, (club_name, course_id) in enumerate(courses, 1):
         log.info("[%d/%d] %s (courseId=%d)…", idx, len(courses), club_name, course_id)
@@ -200,10 +201,21 @@ def fill_all(session: requests.Session) -> tuple[int, int, int]:
             data = fetch_course_data(session, course_id)
             loops = data.get("Loops") or []
 
+            # Club één keer opslaan per naam
+            if club_name not in club_cache:
+                club_cache[club_name] = upsert_club(club_name)
+            club_id = club_cache[club_name]
+
             for loop in loops:
                 loop_name = loop.get("LoopName", "")
                 holes = loop_holes(loop_name) or 18
                 categories = loop.get("Categories") or []
+
+                # Lus één keer opslaan per (club, loop_name)
+                cache_key = (club_id, loop_name)
+                if cache_key not in course_cache:
+                    course_cache[cache_key] = upsert_course(club_id, club_name, loop_name)
+                db_course_id = course_cache[cache_key]
 
                 for cat in categories:
                     cat_idx = cat.get("CategoryIndex", -1)
@@ -216,7 +228,7 @@ def fill_all(session: requests.Session) -> tuple[int, int, int]:
                     if cr is None and slope is None:
                         continue  # geen data, overslaan
 
-                    upsert_tee(club_name, loop_name, holes, tee_name, tee_gender, cr, slope)
+                    upsert_tee(db_course_id, holes, tee_name, tee_gender, cr, slope)
                     saved += 1
                     log.debug(
                         "  %s / %s / %s (%s) → CR=%s Slope=%s",
