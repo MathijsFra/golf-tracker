@@ -186,7 +186,7 @@ const CLUB_DEFAULT_NAMES = {
 };
 
 let bagPeriod        = "all";
-let bagSubTab        = "toptracer";
+let bagSubTab        = "eigen";
 let _bagClubs        = [];
 let _manualDistances = [];
 let _editingClubType = null;
