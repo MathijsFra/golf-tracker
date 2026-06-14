@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="manifest" href="manifest.webmanifest" />
   <title>Road to Scratch</title>
-  <link rel="stylesheet" href="css/styles.css?v=2" />
+  <link rel="stylesheet" href="css/styles.css?v=3" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -80,6 +80,18 @@
 
       <h2 class="section-title">Par scoring</h2>
       <div class="stat-grid" id="parGrid"></div>
+
+      <h2 class="section-title">Scrambling & GIR per par</h2>
+      <div class="stat-grid" id="advGrid"></div>
+
+      <h2 class="section-title">Putt-verdeling</h2>
+      <div class="stat-grid" id="puttDistGrid"></div>
+
+      <h2 class="section-title">Scoreverdeling</h2>
+      <div id="scoreDistGrid"></div>
+
+      <h2 class="section-title">Voor vs achter 9</h2>
+      <div class="stat-grid" id="frontBackGrid"></div>
 
       <h2 class="section-title">Garmin gemiddelden</h2>
       <div class="stat-grid" id="garminGrid"></div>
@@ -482,6 +494,6 @@
     <button class="tab" data-view="settings"><span class="ico">⚙️</span>Instellingen</button>
   </nav>
 
-  <script type="module" src="js/app.js?v=50"></script>
+  <script type="module" src="js/app.js?v=51"></script>
 </body>
 </html>

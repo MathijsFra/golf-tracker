@@ -405,6 +405,32 @@ html, body {
 .weak-card.mid  .weak-val { color: var(--gold); }
 .weak-card.low  .weak-val { color: var(--green-800); }
 
+/* ---------- Scoreverdeling balk ---------- */
+.score-dist-track {
+  display: flex;
+  height: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 8px 0 6px;
+}
+.score-dist-bar { height: 100%; transition: width 0.3s; }
+.score-dist-legend {
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+}
+.score-dist-legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
 /* ---------- EXS list ---------- */
 .exs-list { display: flex; flex-direction: column; gap: 8px; }
 .exs-item {

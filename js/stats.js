@@ -129,6 +129,7 @@ export function computeStats(rounds) {
     play: computePlay(annotated),
     par: computePar(annotated),
     garmin: computeGarmin(annotated),
+    advanced: computeAdvanced(annotated),
     trend: rollingTrend(annotated, 10),
   };
 }
@@ -227,13 +228,125 @@ function computeGarmin(rounds) {
   };
 }
 
+// ---- Geavanceerde per-hole statistieken ----
+
+function scramblingStats(r) {
+  const hd = holesData(r);
+  const missed = hd.filter((h) => h.gir === false && num(h.par) !== null && num(h.score) !== null);
+  if (!missed.length) return null;
+  return { saved: missed.filter((h) => num(h.score) <= num(h.par)).length, total: missed.length };
+}
+
+function girByParStats(r) {
+  const hd = holesData(r);
+  const out = {};
+  for (const par of [3, 4, 5]) {
+    const holes = hd.filter((h) => num(h.par) === par && (h.gir === true || h.gir === false));
+    out[par] = holes.length ? { hit: holes.filter((h) => h.gir === true).length, total: holes.length } : null;
+  }
+  return out;
+}
+
+function puttDistrib(r) {
+  const hd = holesData(r);
+  const wp = hd.filter((h) => num(h.putts) !== null);
+  if (!wp.length) return null;
+  return {
+    one:       wp.filter((h) => num(h.putts) === 1).length,
+    two:       wp.filter((h) => num(h.putts) === 2).length,
+    threePlus: wp.filter((h) => num(h.putts) >= 3).length,
+    total:     wp.length,
+  };
+}
+
+function scoreDistrib(r) {
+  const hd = holesData(r);
+  const ap = hd.filter((h) => num(h.score) !== null && num(h.par) !== null);
+  if (!ap.length) return null;
+  const counts = { eagle: 0, birdie: 0, par: 0, bogey: 0, double: 0, worse: 0 };
+  for (const h of ap) {
+    const d = num(h.score) - num(h.par);
+    if (d <= -2)       counts.eagle++;
+    else if (d === -1) counts.birdie++;
+    else if (d === 0)  counts.par++;
+    else if (d === 1)  counts.bogey++;
+    else if (d === 2)  counts.double++;
+    else               counts.worse++;
+  }
+  return { ...counts, total: ap.length };
+}
+
+function frontBackStats(r) {
+  if (r.holes !== 18) return null;
+  const hd = holesData(r);
+  const front = hd.filter((h) => num(h.hole) !== null && num(h.hole) <= 9  && num(h.score) !== null);
+  const back  = hd.filter((h) => num(h.hole) !== null && num(h.hole) >= 10 && num(h.score) !== null);
+  if (front.length < 9 || back.length < 9) return null;
+  return {
+    front: front.reduce((a, h) => a + num(h.score), 0),
+    back:  back.reduce((a, h) => a + num(h.score), 0),
+  };
+}
+
+export function computeAdvanced(rounds) {
+  let scramSaved = 0, scramTotal = 0;
+  const gp = { 3: { hit: 0, total: 0 }, 4: { hit: 0, total: 0 }, 5: { hit: 0, total: 0 } };
+  const pd = { one: 0, two: 0, threePlus: 0, total: 0 };
+  const sc = { eagle: 0, birdie: 0, par: 0, bogey: 0, double: 0, worse: 0, total: 0 };
+  const fronts = [], backs = [];
+
+  for (const r of rounds) {
+    const s = scramblingStats(r);
+    if (s) { scramSaved += s.saved; scramTotal += s.total; }
+
+    const g = girByParStats(r);
+    for (const par of [3, 4, 5]) {
+      if (g[par]) { gp[par].hit += g[par].hit; gp[par].total += g[par].total; }
+    }
+
+    const pu = puttDistrib(r);
+    if (pu) { pd.one += pu.one; pd.two += pu.two; pd.threePlus += pu.threePlus; pd.total += pu.total; }
+
+    const sd = scoreDistrib(r);
+    if (sd) { for (const k of ["eagle","birdie","par","bogey","double","worse","total"]) sc[k] += sd[k]; }
+
+    const fb = frontBackStats(r);
+    if (fb) { fronts.push(fb.front); backs.push(fb.back); }
+  }
+
+  return {
+    scrambling:      scramTotal >= 10 ? Math.round((scramSaved / scramTotal) * 100) : null,
+    scramblingTotal: scramTotal,
+    girPar3:         gp[3].total ? Math.round((gp[3].hit / gp[3].total) * 100) : null,
+    girPar4:         gp[4].total ? Math.round((gp[4].hit / gp[4].total) * 100) : null,
+    girPar5:         gp[5].total ? Math.round((gp[5].hit / gp[5].total) * 100) : null,
+    puttDist:        pd.total >= 10 ? {
+      one:       Math.round((pd.one       / pd.total) * 100),
+      two:       Math.round((pd.two       / pd.total) * 100),
+      threePlus: Math.round((pd.threePlus / pd.total) * 100),
+    } : null,
+    scoreDist:       sc.total >= 18 ? {
+      eagle:  Math.round((sc.eagle  / sc.total) * 100),
+      birdie: Math.round((sc.birdie / sc.total) * 100),
+      par:    Math.round((sc.par    / sc.total) * 100),
+      bogey:  Math.round((sc.bogey  / sc.total) * 100),
+      double: Math.round((sc.double / sc.total) * 100),
+      worse:  Math.round((sc.worse  / sc.total) * 100),
+    } : null,
+    frontAvg:        fronts.length ? round1(avg(fronts)) : null,
+    backAvg:         backs.length  ? round1(avg(backs))  : null,
+    frontBackCount:  fronts.length,
+  };
+}
+
 // Research-based benchmarkcurves [[hcp, waarde], ...] — lineair geïnterpoleerd.
 // Bronnen: Shot Scope, Golf Insider UK, Break X Golf, MyGolfSpy (zie handicap-levels-framework).
-const _GIR_C  = [[0,65],[5,50],[10,37],[15,26],[20,22],[25,19],[30,12],[36,6],[54,3]];
-const _FW_C   = [[0,57],[5,51],[10,49],[15,48],[20,43],[25,43],[30,38],[36,30],[54,22]];
-const _TP_C   = [[0,1.5],[5,2.0],[10,2.5],[15,3.5],[20,4.2],[25,5.8],[30,7.0],[36,8.5],[54,12.0]];
-const _PEN_C  = [[0,0.5],[5,0.8],[10,1.5],[15,2.0],[20,2.8],[25,3.5],[30,5.0],[36,6.5],[54,10.0]];
-const _DB_C   = [[0,1.5],[5,5],[10,14],[15,26],[20,37],[25,51],[30,60],[36,67],[54,75]];
+const _GIR_C   = [[0,65],[5,50],[10,37],[15,26],[20,22],[25,19],[30,12],[36,6],[54,3]];
+const _FW_C    = [[0,57],[5,51],[10,49],[15,48],[20,43],[25,43],[30,38],[36,30],[54,22]];
+const _TP_C    = [[0,1.5],[5,2.0],[10,2.5],[15,3.5],[20,4.2],[25,5.8],[30,7.0],[36,8.5],[54,12.0]];
+const _PEN_C   = [[0,0.5],[5,0.8],[10,1.5],[15,2.0],[20,2.8],[25,3.5],[30,5.0],[36,6.5],[54,10.0]];
+const _DB_C    = [[0,1.5],[5,5],[10,14],[15,26],[20,37],[25,51],[30,60],[36,67],[54,75]];
+const _SCRAM_C = [[0,62],[5,52],[10,40],[15,33],[20,27],[25,21],[30,17],[36,13],[54,8]];
 
 function _interp(hcp, curve) {
   if (hcp <= curve[0][0]) return curve[0][1];
@@ -252,14 +365,16 @@ function _interp(hcp, curve) {
 // Doelwaarden zijn gebaseerd op research-data per handicapniveau (niet-lineaire curves).
 export function computeWeakspots(stats) {
   const items = [];
-  const p = stats.play;
+  const p   = stats.play;
+  const adv = stats.advanced || {};
   const hcp = stats.currentHcp ?? 18;
 
-  const girTarget = Math.round(_interp(hcp, _GIR_C));
-  const fwTarget  = Math.round(_interp(hcp, _FW_C));
-  const tpTarget  = Math.round(_interp(hcp, _TP_C) * 10) / 10;
-  const penTarget = Math.round(_interp(hcp, _PEN_C) * 10) / 10;
-  const dbTarget  = Math.round(_interp(hcp, _DB_C));
+  const girTarget   = Math.round(_interp(hcp, _GIR_C));
+  const fwTarget    = Math.round(_interp(hcp, _FW_C));
+  const tpTarget    = Math.round(_interp(hcp, _TP_C) * 10) / 10;
+  const penTarget   = Math.round(_interp(hcp, _PEN_C) * 10) / 10;
+  const dbTarget    = Math.round(_interp(hcp, _DB_C));
+  const scramTarget = Math.round(_interp(hcp, _SCRAM_C));
 
   if (p.girPct != null)
     items.push({ area: "GIR", value: `${p.girPct}%`, bench: `doel: ${girTarget}%+`, score: Math.max(0, girTarget - p.girPct) });
@@ -271,6 +386,8 @@ export function computeWeakspots(stats) {
     items.push({ area: "Penalties", value: `${p.penalties.toFixed(1)}/18h`, bench: `doel: <${penTarget}`, score: Math.max(0, (p.penalties - penTarget) * 20) });
   if (p.doubleBogeyRate != null)
     items.push({ area: "Double bogeys", value: `${p.doubleBogeyRate}%`, bench: `doel: <${dbTarget}%`, score: Math.max(0, p.doubleBogeyRate - dbTarget) });
+  if (adv.scrambling != null)
+    items.push({ area: "Scrambling", value: `${adv.scrambling}%`, bench: `doel: ${scramTarget}%+`, score: Math.max(0, scramTarget - adv.scrambling) });
 
   items.sort((a, b) => b.score - a.score);
   return items;
@@ -335,6 +452,7 @@ export function computeCoachData(rounds, userGoal = {}) {
     threePutts: statTrend(qualifying, (r) => { const v = threePutts(r); return v !== null ? v * (r.holes === 9 ? 2 : 1) : null; }),
     penalties:  statTrend(qualifying, (r) => { const hd = holesData(r); const vals = hd.map((h) => num(h.penalties)).filter((v) => v !== null); const tot = vals.length ? vals.reduce((a,b)=>a+b,0) : num(r.penalties); return tot !== null ? tot * (r.holes === 9 ? 2 : 1) : null; }),
     doubleBogey:statTrend(qualifying, (r) => { const db = doubleBogeys(r); return db !== null ? Math.round((db / (r.holes || 18)) * 100) : null; }),
+    scrambling: statTrend(qualifying, (r) => { const s = scramblingStats(r); return s && s.total >= 3 ? Math.round((s.saved / s.total) * 100) : null; }),
     sd:         statTrend(qualifying, (r) => num(r.sd)),
   };
 
@@ -346,6 +464,7 @@ export function computeCoachData(rounds, userGoal = {}) {
     threePutts: Math.round(_interp(hcp, _TP_C) * 10) / 10,
     penalties:  Math.round(_interp(hcp, _PEN_C) * 10) / 10,
     doubleBogey:Math.round(_interp(hcp, _DB_C)),
+    scrambling: Math.round(_interp(hcp, _SCRAM_C)),
   };
 
   // gaps: positief = onder benchmark (verbetering nodig), negatief = al gehaald.
@@ -354,11 +473,12 @@ export function computeCoachData(rounds, userGoal = {}) {
   const b = benchmarks;
   function calcGaps(bench) {
     return {
-      gir:         t.gir.recent        !== null ? bench.gir         - t.gir.recent        : null,
-      fairway:     t.fairway.recent    !== null ? bench.fairway     - t.fairway.recent    : null,
-      threePutts:  t.threePutts.recent !== null ? t.threePutts.recent - bench.threePutts  : null,
-      penalties:   t.penalties.recent  !== null ? t.penalties.recent  - bench.penalties   : null,
-      doubleBogey: t.doubleBogey.recent!== null ? t.doubleBogey.recent- bench.doubleBogey : null,
+      gir:         t.gir.recent         !== null ? bench.gir         - t.gir.recent         : null,
+      fairway:     t.fairway.recent     !== null ? bench.fairway     - t.fairway.recent     : null,
+      threePutts:  t.threePutts.recent  !== null ? t.threePutts.recent  - bench.threePutts  : null,
+      penalties:   t.penalties.recent   !== null ? t.penalties.recent   - bench.penalties   : null,
+      doubleBogey: t.doubleBogey.recent !== null ? t.doubleBogey.recent - bench.doubleBogey : null,
+      scrambling:  t.scrambling.recent  !== null ? bench.scrambling  - t.scrambling.recent  : null,
     };
   }
   const gaps = calcGaps(b);
@@ -372,6 +492,7 @@ export function computeCoachData(rounds, userGoal = {}) {
     threePutts:  Math.round(_interp(nextHcp, _TP_C) * 10) / 10,
     penalties:   Math.round(_interp(nextHcp, _PEN_C) * 10) / 10,
     doubleBogey: Math.round(_interp(nextHcp, _DB_C)),
+    scrambling:  Math.round(_interp(nextHcp, _SCRAM_C)),
   } : null;
   const nextLevelGaps = nextLevelBenchmarks ? calcGaps(nextLevelBenchmarks) : null;
 

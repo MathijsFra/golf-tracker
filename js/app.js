@@ -10,7 +10,7 @@ import {
   updateRoundLoop, saveGoal,
   callCoachAdvice, getManualDistances, upsertManualDistance, deleteManualDistance,
 } from "./db.js?v=37";
-import { computeStats, computeWeakspots, computeCoachData, hcpLevel } from "./stats.js?v=18";
+import { computeStats, computeWeakspots, computeCoachData, hcpLevel } from "./stats.js?v=19";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=12";
 
 const MONTHS = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
@@ -108,6 +108,10 @@ function renderDashboard() {
   $("#parGrid").innerHTML = ac.length ? ac.join("")
     : emptyNote("Par-scoring verschijnt zodra er per-hole data is (via een scorecard-screenshot).");
 
+  // Geavanceerde statistieken
+  const adv = stats.advanced;
+  renderAdvancedStats(adv);
+
   // Garmin
   const g = stats.garmin;
   if (g.any) {
@@ -164,6 +168,70 @@ function renderWeakspots(weakspots) {
       <div class="weak-bench">${esc(w.bench)}</div>
     </div>`;
   }).join("")}</div>`;
+}
+
+function renderAdvancedStats(adv) {
+  // Scrambling + GIR per par
+  const ac = [];
+  if (adv.scrambling != null) ac.push(card("Scrambling", `${adv.scrambling}%`, "par of beter na gemiste green"));
+  if (adv.girPar3 != null) ac.push(card("GIR par 3", `${adv.girPar3}%`, "green geraakt op par-3"));
+  if (adv.girPar4 != null) ac.push(card("GIR par 4", `${adv.girPar4}%`, "green geraakt op par-4"));
+  if (adv.girPar5 != null) ac.push(card("GIR par 5", `${adv.girPar5}%`, "green geraakt op par-5"));
+  $("#advGrid").innerHTML = ac.length ? ac.join("") : emptyNote("Nog geen per-hole GIR/score-data beschikbaar.");
+
+  // Putt-verdeling
+  if (adv.puttDist) {
+    const pd = adv.puttDist;
+    $("#puttDistGrid").innerHTML = [
+      card("1-putt",  `${pd.one}%`,       "van alle holes"),
+      card("2-putts", `${pd.two}%`,       "van alle holes"),
+      card("3-putts+",`${pd.threePlus}%`, "van alle holes"),
+    ].join("");
+  } else {
+    $("#puttDistGrid").innerHTML = emptyNote("Nog geen putt-data per hole beschikbaar.");
+  }
+
+  // Scoreverdeling
+  if (adv.scoreDist) {
+    const sd = adv.scoreDist;
+    const segments = [
+      { key: "eagle",  label: "Eagle",   color: "var(--green-700)", pct: sd.eagle + sd.birdie },
+      { key: "birdie", label: "Birdie",  color: "var(--green-500)", pct: sd.birdie },
+      { key: "par",    label: "Par",     color: "var(--muted)",     pct: sd.par    },
+      { key: "bogey",  label: "Bogey",   color: "var(--gold)",      pct: sd.bogey  },
+      { key: "double", label: "Double+", color: "var(--danger)",    pct: sd.double + sd.worse },
+    ];
+    const bars = [
+      { label: "Eagle/Birdie", color: "var(--green-700)", pct: sd.eagle + sd.birdie },
+      { label: "Par",          color: "#888",             pct: sd.par    },
+      { label: "Bogey",        color: "var(--gold)",      pct: sd.bogey  },
+      { label: "Double+",      color: "var(--danger)",    pct: sd.double + sd.worse },
+    ];
+    const barHtml = bars.map((b) => b.pct > 0
+      ? `<div class="score-dist-bar" style="width:${b.pct}%;background:${b.color}" title="${b.label}: ${b.pct}%"></div>`
+      : ""
+    ).join("");
+    const legendHtml = bars.map((b) =>
+      `<span class="score-dist-legend-dot" style="background:${b.color}"></span>${esc(b.label)} <strong>${b.pct}%</strong>`
+    ).join(" &nbsp; ");
+    $("#scoreDistGrid").innerHTML = `
+      <div class="score-dist-track">${barHtml}</div>
+      <div class="score-dist-legend">${legendHtml}</div>`;
+  } else {
+    $("#scoreDistGrid").innerHTML = emptyNote("Nog geen score-per-hole-data beschikbaar (minimaal 18 holes nodig).");
+  }
+
+  // Voor vs achter 9
+  if (adv.frontAvg != null && adv.backAvg != null) {
+    const diff = Math.round((adv.backAvg - adv.frontAvg) * 10) / 10;
+    const diffLabel = diff === 0 ? "gelijk" : diff > 0 ? `+${diff.toFixed(1)} achter` : `${diff.toFixed(1)} achter`;
+    $("#frontBackGrid").innerHTML = [
+      card("Voor 9", adv.frontAvg.toFixed(1), `gem. slagen (${adv.frontBackCount} ronden)`),
+      card("Achter 9", adv.backAvg.toFixed(1), diffLabel),
+    ].join("");
+  } else {
+    $("#frontBackGrid").innerHTML = emptyNote("Nog geen 18-holes rondes met volledige per-hole data.");
+  }
 }
 
 // ---------- club bag ----------
