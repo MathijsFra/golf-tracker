@@ -1108,7 +1108,7 @@ function saveCoachProvider(provider) {
 }
 
 function loadCoachProvider() {
-  try { return localStorage.getItem(COACH_PROVIDER_KEY) || "groq"; } catch { return "groq"; }
+  try { return localStorage.getItem(COACH_PROVIDER_KEY) || "gemini"; } catch { return "gemini"; }
 }
 
 function syncProviderRadio() {

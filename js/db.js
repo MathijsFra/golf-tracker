@@ -550,7 +550,7 @@ export async function submitGarminOtp(otp) {
 }
 
 // Roept de AI-coach Edge Function aan met de statistieken van de gebruiker.
-export async function callCoachAdvice(coachData, provider = "groq") {
+export async function callCoachAdvice(coachData, provider = "gemini") {
   if (mode !== "supabase") {
     throw new Error("AI-coach vereist een cloud-verbinding (Supabase).");
   }
