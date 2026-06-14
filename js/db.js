@@ -549,6 +549,42 @@ export async function submitGarminOtp(otp) {
   }
 }
 
+// ---------- Club handmatige afstanden ----------
+
+export async function getManualDistances() {
+  if (mode !== "supabase") return [];
+  try {
+    return await pgrest("club_manual_distances?select=club_type,club_display_name,carry_m,notes,updated_at");
+  } catch { return []; }
+}
+
+export async function upsertManualDistance(clubType, displayName, carryM, notes) {
+  if (mode !== "supabase") throw new Error("Vereist een cloud-verbinding (Supabase).");
+  const user = await getUser();
+  if (!user) throw new Error("Niet ingelogd.");
+  await pgrest("club_manual_distances", {
+    method: "POST",
+    body: JSON.stringify({
+      user_id: user.id,
+      club_type: clubType,
+      club_display_name: displayName,
+      carry_m: carryM,
+      notes: notes || null,
+      updated_at: new Date().toISOString(),
+    }),
+    headers: { "Prefer": "resolution=merge-duplicates" },
+  });
+}
+
+export async function deleteManualDistance(clubType) {
+  if (mode !== "supabase") return;
+  const user = await getUser();
+  if (!user) return;
+  await pgrest(`club_manual_distances?user_id=eq.${user.id}&club_type=eq.${encodeURIComponent(clubType)}`, {
+    method: "DELETE",
+  });
+}
+
 // Roept de AI-coach Edge Function aan met de statistieken van de gebruiker.
 export async function callCoachAdvice(coachData, provider = "gemini") {
   if (mode !== "supabase") {

@@ -7,8 +7,8 @@ import {
   resetGarminAuthStatus, clearGarminCredentials, clearGolfnlCredentials,
   getClubBag, getToptracerStatus, saveToptracerCredentials, clearToptracerCredentials,
   saveRoundInsights, patchRoundStats, getLoopsForRound, updateRoundLoop, saveGoal,
-  callCoachAdvice,
-} from "./db.js?v=35";
+  callCoachAdvice, getManualDistances, upsertManualDistance, deleteManualDistance,
+} from "./db.js?v=36";
 import { computeStats, computeWeakspots, computeCoachData, hcpLevel } from "./stats.js?v=18";
 import { renderHcpChart, renderStbChart, renderTrendChart } from "./charts.js?v=12";
 
@@ -174,12 +174,21 @@ const CLUB_GROUPS = [
   { label: "Putter",  types: ["Putter"] },
 ];
 const CLUB_ORDER = CLUB_GROUPS.flatMap((g) => g.types);
+const CLUB_DEFAULT_NAMES = {
+  Driver: "Driver", ThreeWood: "3-hout", FiveWood: "5-hout", SevenWood: "7-hout", NineWood: "9-hout",
+  OneHybrid: "1-hybride", TwoHybrid: "2-hybride", ThreeHybrid: "3-hybride",
+  FourHybrid: "4-hybride", FiveHybrid: "5-hybride", Hybrid: "Hybride",
+  OneIron: "1-ijzer", TwoIron: "2-ijzer", ThreeIron: "3-ijzer", FourIron: "4-ijzer",
+  FiveIron: "5-ijzer", SixIron: "6-ijzer", SevenIron: "7-ijzer",
+  EightIron: "8-ijzer", NineIron: "9-ijzer",
+  PitchingWedge: "PW", GapWedge: "GW", SandWedge: "SW", LobWedge: "LW",
+  Putter: "Putter",
+};
 
-const BAG_METRIC_FIELD = { median: "median_carry_m", avg: "avg_carry_m", max: "max_carry_m" };
-const BAG_METRIC_LABEL = { median: "mediaan", avg: "gemiddeld", max: "max" };
-
-let bagPeriod = "all";
-let bagMetric = "median";
+let bagPeriod        = "all";
+let _bagClubs        = [];
+let _manualDistances = [];
+let _editingClubType = null;
 
 function initBagToggles() {
   $("#bagPeriodToggle")?.addEventListener("click", (e) => {
@@ -189,84 +198,228 @@ function initBagToggles() {
     $("#bagPeriodToggle").querySelectorAll(".toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
     renderBagView();
   });
-  $("#bagMetricToggle")?.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-metric]");
-    if (!btn) return;
-    bagMetric = btn.dataset.metric;
-    $("#bagMetricToggle").querySelectorAll(".toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
-    renderBagGrid();
-  });
 }
 
-let _bagClubs = [];
+function mergeClubData() {
+  const topMap = Object.fromEntries(_bagClubs.map((c) => [c.club_type, c]));
+  const manMap = Object.fromEntries(_manualDistances.map((c) => [c.club_type, c]));
+  const allTypes = new Set([...Object.keys(topMap), ...Object.keys(manMap)]);
+  return Array.from(allTypes)
+    .map((type) => {
+      const top = topMap[type];
+      const man = manMap[type];
+      return {
+        club_type: type,
+        club_display_name: man?.club_display_name ?? top?.club_display_name ?? type,
+        effective_carry_m: man?.carry_m ?? top?.median_carry_m ?? null,
+        source: man ? (top ? "both" : "manual") : "toptracer",
+        manual: man ?? null,
+        toptracer: top ?? null,
+      };
+    })
+    .filter((c) => c.effective_carry_m != null)
+    .sort((a, b) => {
+      if (a.club_type === "Putter" && b.club_type !== "Putter") return 1;
+      if (b.club_type === "Putter" && a.club_type !== "Putter") return -1;
+      return b.effective_carry_m - a.effective_carry_m;
+    });
+}
+
+function gapColorClass(gap) {
+  return gap > 22 ? "red" : gap > 15 ? "orange" : "green";
+}
+
+function renderGappingLadder(clubs) {
+  const nonPutter = clubs.filter((c) => c.club_type !== "Putter");
+  if (nonPutter.length < 2) return "";
+  const maxDist = nonPutter[0].effective_carry_m;
+  const minDist = nonPutter[nonPutter.length - 1].effective_carry_m;
+  const range   = Math.max(maxDist - minDist, 1);
+  const height  = Math.max(280, nonPutter.length * 34 + 20);
+
+  let rows = "";
+  for (let i = 0; i < nonPutter.length; i++) {
+    const club   = nonPutter[i];
+    const topPct = ((maxDist - club.effective_carry_m) / range) * 100;
+    const src    = club.source;
+    const srcLbl = src === "toptracer" ? "T" : "H";
+    const srcTip = src === "both"
+      ? `Handmatig · Toptracer: ${Math.round(club.toptracer.median_carry_m)}m`
+      : src === "manual" ? "Handmatig" : `Toptracer · ${club.toptracer?.shot_count ?? 0}x`;
+    rows += `<div class="gl-row" style="top:${topPct.toFixed(1)}%" data-club-type="${esc(club.club_type)}">
+      <span class="gl-dist">${Math.round(club.effective_carry_m)}</span>
+      <span class="gl-dot gl-dot--${src}" title="${esc(srcTip)}"></span>
+      <span class="gl-name">${esc(club.club_display_name)}</span>
+      <span class="gl-badge gl-badge--${src}">${srcLbl}</span>
+    </div>`;
+    if (i < nonPutter.length - 1) {
+      const gap    = Math.round(club.effective_carry_m - nonPutter[i + 1].effective_carry_m);
+      const midPct = ((maxDist - (club.effective_carry_m + nonPutter[i + 1].effective_carry_m) / 2) / range) * 100;
+      rows += `<div class="gl-gap gl-gap--${gapColorClass(gap)}" style="top:${midPct.toFixed(1)}%">↕ ${gap}m</div>`;
+    }
+  }
+  return `<div class="gapping-ladder" style="height:${height}px"><div class="gl-line"></div>${rows}</div>`;
+}
+
+function renderClubTable(clubs) {
+  if (!clubs.length) return "";
+  let html = `<div class="club-list">`;
+  for (let i = 0; i < clubs.length; i++) {
+    const club     = clubs[i];
+    const isPutter = club.club_type === "Putter";
+    const next     = !isPutter ? clubs.slice(i + 1).find((c) => c.club_type !== "Putter") : null;
+    const gap      = next ? Math.round(club.effective_carry_m - next.effective_carry_m) : null;
+    const srcClass = club.source === "toptracer" ? "toptracer" : "manual";
+    const srcLbl   = club.source === "toptracer" ? "T" : "H";
+    let sub = "";
+    if (club.source === "both") sub = `Toptracer: ${Math.round(club.toptracer.median_carry_m)}m`;
+    else if (club.source === "toptracer" && club.toptracer?.shot_count) sub = `${club.toptracer.shot_count} slagen`;
+    else if (club.manual?.notes) sub = club.manual.notes;
+    html += `<div class="club-list-row">
+      <span class="cl-badge cl-badge--${srcClass}">${srcLbl}</span>
+      <div class="cl-info">
+        <span class="cl-name">${esc(club.club_display_name)}</span>
+        ${sub ? `<span class="cl-sub">${esc(sub)}</span>` : ""}
+      </div>
+      <div class="cl-right">
+        ${gap != null ? `<span class="cl-gap cl-gap--${gapColorClass(gap)}">↕${gap}m</span>` : ""}
+        <span class="cl-dist">${Math.round(club.effective_carry_m)}m</span>
+        <button class="cl-edit-btn" data-club-type="${esc(club.club_type)}" aria-label="Bewerken">✏️</button>
+      </div>
+    </div>`;
+  }
+  return html + `</div>`;
+}
 
 async function renderBagView() {
-  const emptyEl = $("#bagEmpty");
-  const grid    = $("#bagClubGrid");
+  const content = $("#bagContent");
   const sub     = $("#bagSub");
-  if (!grid) return;
-
-  grid.innerHTML = `<div class="bag-loading">Laden…</div>`;
+  if (!content) return;
+  content.innerHTML = `<div class="bag-loading">Laden…</div>`;
   try {
-    _bagClubs = await getClubBag(bagPeriod);
-    if (!_bagClubs.length) {
-      grid.innerHTML = "";
-      if (emptyEl) emptyEl.hidden = false;
-      if (sub) sub.textContent = "";
+    [_bagClubs, _manualDistances] = await Promise.all([getClubBag(bagPeriod), getManualDistances()]);
+    const clubs  = mergeClubData();
+    const labels = [];
+    if (_bagClubs.length)        labels.push(`${_bagClubs.length} clubs via Toptracer`);
+    if (_manualDistances.length) labels.push(`${_manualDistances.length} handmatig`);
+    if (sub) sub.textContent = labels.join(" · ");
+    if (!clubs.length) {
+      content.innerHTML = `<p class="empty-note">Nog geen clubs. Koppel <button class="link-btn" id="bagGoSettings2">Toptracer</button> of voeg clubs handmatig toe.</p>`;
+      $("#bagGoSettings2")?.addEventListener("click", () => switchView("settings"));
       return;
     }
-    if (emptyEl) emptyEl.hidden = true;
-    if (sub) sub.textContent = `${_bagClubs.length} clubs via Toptracer`;
-    renderBagGrid();
-  } catch {
-    grid.innerHTML = "";
-    if (emptyEl) emptyEl.hidden = false;
+    content.innerHTML = renderGappingLadder(clubs) + renderClubTable(clubs);
+    content.querySelectorAll(".cl-edit-btn").forEach((btn) =>
+      btn.addEventListener("click", (e) => { e.stopPropagation(); openClubModal(btn.dataset.clubType); })
+    );
+    content.querySelectorAll(".gl-row").forEach((row) =>
+      row.addEventListener("click", () => openClubModal(row.dataset.clubType))
+    );
+  } catch (err) {
+    content.innerHTML = `<p class="empty-note">Laden mislukt.</p>`;
+    console.error(err);
   }
 }
 
-function renderBagGrid() {
-  const grid = $("#bagClubGrid");
-  if (!grid || !_bagClubs.length) return;
+function openClubModal(clubType) {
+  _editingClubType = clubType ?? null;
+  const clubs    = mergeClubData();
+  const club     = clubType ? clubs.find((c) => c.club_type === clubType) : null;
+  const nameIn   = $("#clubEditName");
+  const carryIn  = $("#clubEditCarry");
+  const notesIn  = $("#clubEditNotes");
+  const hint     = $("#clubEditToptracer");
+  const resetBtn = $("#clubEditReset");
+  const delBtn   = $("#clubEditDelete");
+  const typeGrp  = $("#clubTypeSelectGroup");
+  const typeSel  = $("#clubEditType");
 
-  const field = BAG_METRIC_FIELD[bagMetric];
-  const label = BAG_METRIC_LABEL[bagMetric];
+  if (club) {
+    $("#clubEditTitle").textContent = `${club.club_display_name} bewerken`;
+    typeGrp.hidden = true;
+    nameIn.value   = club.club_display_name;
+    carryIn.value  = club.manual?.carry_m ?? "";
+    notesIn.value  = club.manual?.notes ?? "";
+    if (club.toptracer) {
+      hint.textContent = `Toptracer mediaan: ${Math.round(club.toptracer.median_carry_m)}m · ${club.toptracer.shot_count ?? 0} slagen`;
+      hint.hidden  = false;
+      resetBtn.hidden = !club.manual;
+    } else {
+      hint.hidden = true; resetBtn.hidden = true;
+    }
+    delBtn.hidden = !club.manual;
+  } else {
+    $("#clubEditTitle").textContent = "Club toevoegen";
+    typeGrp.hidden = false;
+    nameIn.value = ""; carryIn.value = ""; notesIn.value = "";
+    hint.hidden = true; resetBtn.hidden = true; delBtn.hidden = true;
+    const existing  = new Set(clubs.map((c) => c.club_type));
+    const available = CLUB_ORDER.filter((t) => !existing.has(t));
+    typeSel.innerHTML = available
+      .map((t) => `<option value="${esc(t)}">${esc(CLUB_DEFAULT_NAMES[t] || t)}</option>`)
+      .join("") + `<option value="__custom__">Eigen club…</option>`;
+    if (available.length) nameIn.value = CLUB_DEFAULT_NAMES[available[0]] || "";
+  }
+  $("#clubEditModal").hidden = false;
+  carryIn.focus();
+}
 
-  const sorted = _bagClubs.slice().sort((a, b) => {
-    const ai = CLUB_ORDER.indexOf(a.club_type);
-    const bi = CLUB_ORDER.indexOf(b.club_type);
-    if (ai === -1 && bi === -1) return 0;
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
+function closeClubModal() {
+  $("#clubEditModal").hidden = true;
+  _editingClubType = null;
+}
+
+function initBagModal() {
+  const modal = $("#clubEditModal");
+  if (!modal) return;
+
+  $("#clubEditClose")?.addEventListener("click", closeClubModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeClubModal(); });
+
+  $("#clubEditType")?.addEventListener("change", () => {
+    if (_editingClubType) return;
+    const val = $("#clubEditType").value;
+    $("#clubEditName").value = val === "__custom__" ? "" : (CLUB_DEFAULT_NAMES[val] || val);
+    if (val === "__custom__") $("#clubEditName").focus();
   });
 
-  const knownTypes = new Set(CLUB_ORDER);
-  const byType = Object.fromEntries(sorted.map((c) => [c.club_type, c]));
-  let html = "";
-  for (const group of CLUB_GROUPS) {
-    const inGroup = group.types.map((t) => byType[t]).filter(Boolean);
-    if (!inGroup.length) continue;
-    html += `<div class="bag-group-label">${group.label}</div>`;
-    html += `<div class="stat-grid bag-group-grid">`;
-    html += inGroup.map((c) => {
-      const val = c[field] != null ? `${Math.round(c[field])} m` : "—";
-      const sub = c.shot_count ? `${label} · ${c.shot_count} slagen` : label;
-      return card(esc(c.club_display_name || c.club_type), val, sub);
-    }).join("");
-    html += `</div>`;
-  }
-  const overig = sorted.filter((c) => !knownTypes.has(c.club_type));
-  if (overig.length) {
-    html += `<div class="bag-group-label">Overig</div>`;
-    html += `<div class="stat-grid bag-group-grid">`;
-    html += overig.map((c) => {
-      const val = c[field] != null ? `${Math.round(c[field])} m` : "—";
-      const sub = c.shot_count ? `${label} · ${c.shot_count} slagen` : label;
-      return card(esc(c.club_display_name || c.club_type), val, sub);
-    }).join("");
-    html += `</div>`;
-  }
-  grid.innerHTML = html;
+  $("#clubEditForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const carry = parseInt($("#clubEditCarry").value, 10);
+    if (!carry || carry < 10 || carry > 400) { $("#clubEditCarry").focus(); return; }
+    const name = $("#clubEditName").value.trim();
+    if (!name) { $("#clubEditName").focus(); return; }
+    let clubType = _editingClubType;
+    if (!clubType) {
+      const sel = $("#clubEditType").value;
+      clubType  = sel === "__custom__" ? `custom_${Date.now()}` : sel;
+    }
+    try {
+      await upsertManualDistance(clubType, name, carry, $("#clubEditNotes").value.trim() || null);
+      closeClubModal();
+      await renderBagView();
+    } catch (err) { alert("Opslaan mislukt: " + (err.message || err)); }
+  });
+
+  $("#clubEditReset")?.addEventListener("click", async () => {
+    if (!_editingClubType) return;
+    if (!confirm("Handmatige afstand verwijderen en Toptracer-data gebruiken?")) return;
+    try {
+      await deleteManualDistance(_editingClubType);
+      closeClubModal(); await renderBagView();
+    } catch (err) { alert("Mislukt: " + (err.message || err)); }
+  });
+
+  $("#clubEditDelete")?.addEventListener("click", async () => {
+    if (!_editingClubType) return;
+    const clubs = mergeClubData();
+    const name  = clubs.find((c) => c.club_type === _editingClubType)?.club_display_name ?? "Club";
+    if (!confirm(`${name} verwijderen?`)) return;
+    try {
+      await deleteManualDistance(_editingClubType);
+      closeClubModal(); await renderBagView();
+    } catch (err) { alert("Mislukt: " + (err.message || err)); }
+  });
 }
 
 // ---------- per-ronde inzichten ----------
@@ -1259,7 +1412,7 @@ async function main() {
   $("#roundForm").addEventListener("submit", onSubmit);
   $("#cancelBtn").addEventListener("click", () => { resetForm(); switchView("rounds"); });
   $("#filterHoles").addEventListener("change", renderRoundList);
-  $("#bagGoSettings")?.addEventListener("click", () => switchView("settings"));
+  $("#bagAddClubBtn")?.addEventListener("click", () => openClubModal(null));
   $("#coachAnalyseBtn")?.addEventListener("click", runCoachAnalysis);
   $("#coachStaleRefreshBtn")?.addEventListener("click", runCoachAnalysis);
   $("#coachRefreshBtn")?.addEventListener("click", runCoachAnalysis);
@@ -1270,6 +1423,7 @@ async function main() {
     }
   });
   initBagToggles();
+  initBagModal();
   $("#f_shots").addEventListener("change", onShotsSelected);
   $("#parseBtn").addEventListener("click", onParse);
   $("#f_holes").addEventListener("change", () => buildHolesGrid(collectHolesGrid()));

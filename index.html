@@ -388,18 +388,45 @@
             <button class="toggle-btn active" data-period="all">Altijd</button>
             <button class="toggle-btn" data-period="recent">Maand</button>
           </div>
-          <div class="bag-toggle" id="bagMetricToggle">
-            <button class="toggle-btn active" data-metric="median">Mediaan</button>
-            <button class="toggle-btn" data-metric="avg">Gemiddeld</button>
-            <button class="toggle-btn" data-metric="max">Max</button>
-          </div>
         </div>
       </div>
-      <div id="bagEmpty" class="empty-note" hidden>
-        Koppel Toptracer in <button class="link-btn" id="bagGoSettings">Instellingen</button> om je club bag te zien.
-      </div>
-      <div id="bagClubGrid"></div>
+      <div id="bagContent"></div>
+      <button class="btn btn-outline bag-add-btn" id="bagAddClubBtn">+ Club toevoegen</button>
     </section>
+
+    <!-- Club bewerk-modal -->
+    <div id="clubEditModal" class="modal-overlay" hidden>
+      <div class="modal-sheet">
+        <div class="modal-header">
+          <h3 id="clubEditTitle">Club bewerken</h3>
+          <button class="modal-close" id="clubEditClose" aria-label="Sluiten">✕</button>
+        </div>
+        <form id="clubEditForm" novalidate>
+          <div class="form-group" id="clubTypeSelectGroup" hidden>
+            <label for="clubEditType">Club</label>
+            <select id="clubEditType" class="form-input"></select>
+          </div>
+          <div class="form-group">
+            <label for="clubEditName">Naam</label>
+            <input type="text" id="clubEditName" class="form-input" placeholder="bijv. 7-ijzer, 52° Wedge" />
+          </div>
+          <div class="form-group">
+            <label for="clubEditCarry">Carry (meters)</label>
+            <input type="number" id="clubEditCarry" class="form-input" min="10" max="400" placeholder="bijv. 155" inputmode="numeric" />
+            <span id="clubEditToptracer" class="form-hint" hidden></span>
+          </div>
+          <div class="form-group">
+            <label for="clubEditNotes">Notitie (optioneel)</label>
+            <input type="text" id="clubEditNotes" class="form-input" placeholder="bijv. alleen halve slagen in Toptracer" maxlength="80" />
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary">Opslaan</button>
+            <button type="button" class="btn btn-ghost" id="clubEditReset" hidden>↩ Toptracer gebruiken</button>
+            <button type="button" class="btn btn-danger-ghost" id="clubEditDelete" hidden>Verwijderen</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <!-- COACH -->
     <section id="view-coach" class="view">
@@ -452,6 +479,6 @@
     <button class="tab" data-view="settings"><span class="ico">⚙️</span>Instellingen</button>
   </nav>
 
-  <script type="module" src="js/app.js?v=44"></script>
+  <script type="module" src="js/app.js?v=45"></script>
 </body>
 </html>

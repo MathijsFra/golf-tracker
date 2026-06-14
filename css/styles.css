@@ -981,3 +981,63 @@ details.adv[open] > summary::after { transform: rotate(180deg); }
 :root[data-theme="dark"] .trend-stable { background: rgba(255,255,255,0.06); }
 :root[data-theme="dark"] .coach-goal-card { border: 1px solid rgba(255,255,255,0.07); border-left: 3px solid var(--brand-gold); }
 :root[data-theme="dark"] .btn-secondary { border-color: rgba(255,255,255,0.12); color: rgba(255,255,255,0.5); }
+
+/* ---------- Gapping ladder ---------- */
+.gapping-ladder { position: relative; margin: 4px 0 24px; }
+.gl-line { position: absolute; left: 44px; top: 8px; bottom: 8px; width: 2px; background: var(--border); border-radius: 1px; }
+.gl-row {
+  position: absolute; left: 0; right: 0;
+  display: flex; align-items: center; gap: 6px;
+  transform: translateY(-50%); cursor: pointer; user-select: none;
+}
+.gl-row:active { opacity: 0.7; }
+.gl-dist { width: 36px; text-align: right; font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.gl-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.gl-dot--toptracer { background: #4285f4; }
+.gl-dot--manual, .gl-dot--both { background: #27ae60; }
+.gl-name { font-size: 0.85rem; font-weight: 500; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gl-badge { font-size: 0.65rem; font-weight: 700; padding: 1px 5px; border-radius: 4px; flex-shrink: 0; }
+.gl-badge--toptracer { background: #e8f0fe; color: #1a73e8; }
+.gl-badge--manual, .gl-badge--both { background: #e8f8ef; color: #27ae60; }
+.gl-gap { position: absolute; left: 50px; font-size: 0.68rem; font-weight: 600; transform: translateY(-50%); pointer-events: none; }
+.gl-gap--green  { color: #27ae60; }
+.gl-gap--orange { color: #e67e22; }
+.gl-gap--red    { color: #e74c3c; }
+
+/* ---------- Club list ---------- */
+.club-list { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.club-list-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--card); }
+.club-list-row:last-child { border-bottom: none; }
+.cl-badge { font-size: 0.62rem; font-weight: 700; padding: 2px 5px; border-radius: 4px; flex-shrink: 0; }
+.cl-badge--toptracer { background: #e8f0fe; color: #1a73e8; }
+.cl-badge--manual    { background: #e8f8ef; color: #27ae60; }
+.cl-info  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cl-name  { font-size: 0.88rem; font-weight: 500; }
+.cl-sub   { font-size: 0.72rem; color: var(--muted); }
+.cl-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.cl-dist  { font-size: 0.9rem; font-weight: 700; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.cl-gap   { font-size: 0.68rem; font-weight: 600; }
+.cl-gap--green  { color: #27ae60; }
+.cl-gap--orange { color: #e67e22; }
+.cl-gap--red    { color: #e74c3c; }
+.cl-edit-btn { background: none; border: none; cursor: pointer; font-size: 0.9rem; padding: 4px 6px; border-radius: 6px; opacity: 0.55; }
+.cl-edit-btn:hover, .cl-edit-btn:active { opacity: 1; background: var(--border); }
+.bag-add-btn { margin-top: 12px; width: 100%; }
+
+/* ---------- Club modal ---------- */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 300; display: flex; align-items: flex-end; }
+.modal-sheet { background: var(--bg); border-radius: 20px 20px 0 0; padding: 8px 16px 36px; width: 100%; max-height: 92vh; overflow-y: auto; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.modal-header h3 { font-size: 1rem; font-weight: 700; margin: 0; }
+.modal-close { background: none; border: none; font-size: 1.1rem; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.modal-close:hover { background: var(--border); }
+.modal-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.form-hint { font-size: 0.75rem; color: var(--muted); margin-top: 5px; display: block; }
+.btn-outline { background: none; border: 1.5px solid var(--border); color: var(--fg); border-radius: 10px; padding: 10px 16px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+.btn-outline:active { background: var(--border); }
+.btn-danger-ghost { background: none; border: none; color: #e74c3c; font-size: 0.85rem; font-weight: 500; cursor: pointer; padding: 8px 0; text-align: center; }
+:root[data-theme="dark"] .modal-sheet { background: #1a1a1a; }
+:root[data-theme="dark"] .gl-badge--toptracer { background: rgba(66,133,244,0.15); }
+:root[data-theme="dark"] .gl-badge--manual, :root[data-theme="dark"] .gl-badge--both { background: rgba(39,174,96,0.15); }
+:root[data-theme="dark"] .cl-badge--toptracer { background: rgba(66,133,244,0.15); }
+:root[data-theme="dark"] .cl-badge--manual { background: rgba(39,174,96,0.15); }
