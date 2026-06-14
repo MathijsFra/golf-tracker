@@ -124,8 +124,11 @@ function renderDashboard() {
     $("#garminGrid").innerHTML = emptyNote("Nog geen Garmin-data (putts, bunkers).");
   }
 
-  // EXS
-  if (stats.exsRounds.length) {
+  // EXS — sectie alleen zichtbaar als er daadwerkelijk EXS-rondes zijn
+  const hasExs = stats.exsRounds.length > 0;
+  $("#exsTitle").hidden = !hasExs;
+  $("#exsList").hidden  = !hasExs;
+  if (hasExs) {
     $("#exsList").innerHTML = stats.exsRounds.slice().reverse().map((r) => `
       <div class="exs-item">
         <div>
@@ -134,8 +137,6 @@ function renderDashboard() {
         </div>
         <div class="ex-drop">−${r._exsDiff.toFixed(1)}</div>
       </div>`).join("");
-  } else {
-    $("#exsList").innerHTML = emptyNote("Nog geen exceptionele scores (dagresultaat ≥ 7.0 onder je index).");
   }
 
   $("#recentList").innerHTML = rounds.slice(-3).reverse().map((r) => roundCard(r, false)).join("")
