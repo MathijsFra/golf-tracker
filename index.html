@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="manifest" href="manifest.webmanifest" />
   <title>Road to Scratch</title>
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css?v=2" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -382,8 +382,11 @@
     <section id="view-bag" class="view">
       <div class="bag-header">
         <h2 class="section-title">Club Bag</h2>
-        <p class="bag-sub" id="bagSub"></p>
-        <div class="bag-controls">
+        <div class="bag-tab-row" id="bagTabRow">
+          <button class="bag-tab-btn active" data-bag-tab="toptracer">Toptracer</button>
+          <button class="bag-tab-btn" data-bag-tab="eigen">Eigen invoer</button>
+        </div>
+        <div class="bag-controls" id="bagPeriodControls">
           <div class="bag-toggle" id="bagPeriodToggle">
             <button class="toggle-btn active" data-period="all">Altijd</button>
             <button class="toggle-btn" data-period="recent">Maand</button>
@@ -391,7 +394,7 @@
         </div>
       </div>
       <div id="bagContent"></div>
-      <button class="btn btn-outline bag-add-btn" id="bagAddClubBtn">+ Club toevoegen</button>
+      <button class="btn btn-outline bag-add-btn" id="bagAddClubBtn" hidden>+ Club toevoegen</button>
     </section>
 
     <!-- Club bewerk-modal -->
@@ -479,6 +482,6 @@
     <button class="tab" data-view="settings"><span class="ico">⚙️</span>Instellingen</button>
   </nav>
 
-  <script type="module" src="js/app.js?v=46"></script>
+  <script type="module" src="js/app.js?v=47"></script>
 </body>
 </html>

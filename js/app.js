@@ -186,11 +186,24 @@ const CLUB_DEFAULT_NAMES = {
 };
 
 let bagPeriod        = "all";
+let bagSubTab        = "toptracer";
 let _bagClubs        = [];
 let _manualDistances = [];
 let _editingClubType = null;
 
 function initBagToggles() {
+  $("#bagTabRow")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-bag-tab]");
+    if (!btn || btn.classList.contains("active")) return;
+    bagSubTab = btn.dataset.bagTab;
+    $("#bagTabRow").querySelectorAll(".bag-tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    const isTop = bagSubTab === "toptracer";
+    const periodControls = $("#bagPeriodControls");
+    if (periodControls) periodControls.hidden = !isTop;
+    const addBtn = $("#bagAddClubBtn");
+    if (addBtn) addBtn.hidden = isTop;
+    renderBagPanel();
+  });
   $("#bagPeriodToggle")?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-period]");
     if (!btn) return;
@@ -229,37 +242,39 @@ function gapColorClass(gap) {
   return gap > 22 ? "red" : gap > 15 ? "orange" : "green";
 }
 
-function renderBagContent(clubs) {
-  if (!clubs.length) return "";
-  const nonPutter = clubs.filter((c) => c.club_type !== "Putter");
-  const putter    = clubs.find((c) => c.club_type === "Putter");
+function buildGapRow(gap) {
+  const cls  = gapColorClass(gap);
+  const warn = gap > 22 ? " — groot gat" : gap > 15 ? " — let op" : "";
+  return `<div class="gap-row gap-row--${cls}">
+    <span class="gap-row__tick"></span>
+    <span class="gap-row__lbl">↕ ${gap}m${warn}</span>
+  </div>`;
+}
+
+function renderTopTracerPanel(content) {
+  if (!_bagClubs.length) {
+    content.innerHTML = `<p class="empty-note">Geen Toptracer-data. Koppel Toptracer via <button class="link-btn" id="bagGoSettings2">Instellingen</button>.</p>`;
+    content.querySelector("#bagGoSettings2")?.addEventListener("click", () => switchView("settings"));
+    return;
+  }
+  const sorted = [..._bagClubs].sort((a, b) => {
+    if (a.club_type === "Putter" && b.club_type !== "Putter") return 1;
+    if (b.club_type === "Putter" && a.club_type !== "Putter") return -1;
+    return b.median_carry_m - a.median_carry_m;
+  });
+  const nonPutter = sorted.filter((c) => c.club_type !== "Putter");
+  const putter    = sorted.find((c)  => c.club_type === "Putter");
 
   function clubRow(club) {
-    const srcClass = club.source === "toptracer" ? "toptracer" : "manual";
-    const srcLbl   = club.source === "toptracer" ? "T" : "H";
-    let sub = "";
-    if (club.source === "both") sub = `Toptracer: ${Math.round(club.toptracer.median_carry_m)}m`;
-    else if (club.source === "toptracer" && club.toptracer?.shot_count) sub = `${club.toptracer.shot_count} slagen`;
-    else if (club.manual?.notes) sub = club.manual.notes;
+    const name = CLUB_DEFAULT_NAMES[club.club_type] ?? club.club_display_name ?? club.club_type;
+    const sub  = club.shot_count ? `${club.shot_count} slagen` : "";
     return `<div class="club-list-row">
-      <span class="cl-badge cl-badge--${srcClass}">${srcLbl}</span>
+      <span class="cl-badge cl-badge--toptracer">T</span>
       <div class="cl-info">
-        <span class="cl-name">${esc(club.club_display_name)}</span>
+        <span class="cl-name">${esc(name)}</span>
         ${sub ? `<span class="cl-sub">${esc(sub)}</span>` : ""}
       </div>
-      <div class="cl-right">
-        <span class="cl-dist">${Math.round(club.effective_carry_m)}m</span>
-        <button class="cl-edit-btn" data-club-type="${esc(club.club_type)}" aria-label="Bewerken">✏️</button>
-      </div>
-    </div>`;
-  }
-
-  function gapRow(gap) {
-    const cls  = gapColorClass(gap);
-    const warn = gap > 22 ? " — groot gat" : gap > 15 ? " — let op" : "";
-    return `<div class="gap-row gap-row--${cls}">
-      <span class="gap-row__tick"></span>
-      <span class="gap-row__lbl">↕ ${gap}m${warn}</span>
+      <span class="cl-dist">${Math.round(club.median_carry_m)}m</span>
     </div>`;
   }
 
@@ -267,41 +282,88 @@ function renderBagContent(clubs) {
   for (let i = 0; i < nonPutter.length; i++) {
     html += clubRow(nonPutter[i]);
     if (nonPutter[i + 1]) {
-      const gap = Math.round(nonPutter[i].effective_carry_m - nonPutter[i + 1].effective_carry_m);
-      html += gapRow(gap);
+      const gap = Math.round(nonPutter[i].median_carry_m - nonPutter[i + 1].median_carry_m);
+      if (gap >= 0) html += buildGapRow(gap);
     }
   }
   if (putter) {
     html += `<div class="gap-row gap-row--divider"></div>`;
     html += clubRow(putter);
   }
-  return html + `</div>`;
+  html += `</div>`;
+  html += `<p class="bag-readonly-note">Alleen lezen — voeg eigen afstanden toe via <button class="link-btn" id="bagGoEigen">Eigen invoer</button>.</p>`;
+  content.innerHTML = html;
+  content.querySelector("#bagGoEigen")?.addEventListener("click", () => {
+    const btn = document.querySelector("[data-bag-tab='eigen']");
+    btn?.click();
+  });
+}
+
+function renderEigenInvoerPanel(content) {
+  if (!_manualDistances.length) {
+    content.innerHTML = `<p class="empty-note">Nog geen eigen afstanden ingevoerd. Gebruik <strong>+ Club toevoegen</strong> hieronder.</p>`;
+    return;
+  }
+  const topMap = Object.fromEntries(_bagClubs.map((c) => [c.club_type, c]));
+  const sorted = [..._manualDistances].sort((a, b) => {
+    if (a.club_type === "Putter" && b.club_type !== "Putter") return 1;
+    if (b.club_type === "Putter" && a.club_type !== "Putter") return -1;
+    return b.carry_m - a.carry_m;
+  });
+  const nonPutter = sorted.filter((c) => c.club_type !== "Putter");
+  const putter    = sorted.find((c)  => c.club_type === "Putter");
+
+  function clubRow(club) {
+    const top    = topMap[club.club_type];
+    const topSub = top ? `Toptracer: ${Math.round(top.median_carry_m)}m` : (club.notes || "");
+    return `<div class="club-list-row">
+      <span class="cl-badge cl-badge--manual">H</span>
+      <div class="cl-info">
+        <span class="cl-name">${esc(club.club_display_name)}</span>
+        ${topSub ? `<span class="cl-sub">${esc(topSub)}</span>` : ""}
+      </div>
+      <div class="cl-right">
+        <span class="cl-dist">${Math.round(club.carry_m)}m</span>
+        <button class="cl-edit-btn" data-club-type="${esc(club.club_type)}" aria-label="Bewerken">✏️</button>
+      </div>
+    </div>`;
+  }
+
+  let html = `<div class="club-list">`;
+  for (let i = 0; i < nonPutter.length; i++) {
+    html += clubRow(nonPutter[i]);
+    if (nonPutter[i + 1]) {
+      const gap = Math.round(nonPutter[i].carry_m - nonPutter[i + 1].carry_m);
+      if (gap >= 0) html += buildGapRow(gap);
+    }
+  }
+  if (putter) {
+    html += `<div class="gap-row gap-row--divider"></div>`;
+    html += clubRow(putter);
+  }
+  content.innerHTML = html + `</div>`;
+  content.querySelectorAll(".cl-edit-btn").forEach((btn) =>
+    btn.addEventListener("click", (e) => { e.stopPropagation(); openClubModal(btn.dataset.clubType); })
+  );
+}
+
+function renderBagPanel() {
+  const content = $("#bagContent");
+  if (!content) return;
+  if (bagSubTab === "toptracer") {
+    renderTopTracerPanel(content);
+  } else {
+    renderEigenInvoerPanel(content);
+  }
 }
 
 async function renderBagView() {
   const content = $("#bagContent");
-  const sub     = $("#bagSub");
   if (!content) return;
   content.innerHTML = `<div class="bag-loading">Laden…</div>`;
   try {
     [_bagClubs, _manualDistances] = await Promise.all([getClubBag(bagPeriod), getManualDistances()]);
-    const clubs  = mergeClubData();
-    const labels = [];
-    if (_bagClubs.length)        labels.push(`${_bagClubs.length} clubs via Toptracer`);
-    if (_manualDistances.length) labels.push(`${_manualDistances.length} handmatig`);
-    if (sub) sub.textContent = labels.join(" · ");
-    if (!clubs.length) {
-      content.innerHTML = `<p class="empty-note">Nog geen clubs. Koppel <button class="link-btn" id="bagGoSettings2">Toptracer</button> of voeg clubs handmatig toe.</p>`;
-      $("#bagGoSettings2")?.addEventListener("click", () => switchView("settings"));
-      return;
-    }
-    content.innerHTML = renderBagContent(clubs);
-    content.querySelectorAll(".cl-edit-btn").forEach((btn) =>
-      btn.addEventListener("click", (e) => { e.stopPropagation(); openClubModal(btn.dataset.clubType); })
-    );
-    content.querySelectorAll(".gl-row").forEach((row) =>
-      row.addEventListener("click", () => openClubModal(row.dataset.clubType))
-    );
+    renderBagPanel();
   } catch (err) {
     content.innerHTML = `<p class="empty-note">Laden mislukt.</p>`;
     console.error(err);
